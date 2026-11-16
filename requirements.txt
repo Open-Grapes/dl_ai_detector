@@ -1,0 +1,13 @@
+# CPU build of PyTorch keeps the .exe small enough; install it first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.4
+transformers>=4.50
+safetensors
+huggingface_hub
+opencv-python-headless>=4.8
+av>=12
+pillow>=10.0
+numpy
+c2pa-python>=0.30
+tkinterdnd2>=0.4
+pyinstaller>=6.0

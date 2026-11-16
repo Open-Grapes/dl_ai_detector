@@ -1,0 +1,12 @@
+.venv/
+build/
+dist/
+__pycache__/
+*.pyc
+# models are downloaded per user at runtime, never committed
+models/
+*.safetensors
+*.onnx
+*.bin
+*_ai_report/
+build.log
