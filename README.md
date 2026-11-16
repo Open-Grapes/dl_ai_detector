@@ -1,8 +1,21 @@
 # dl_ai_detector
 
-Windows app that checks whether an **image or video** is AI-generated or deepfaked. It runs several independent checks and puts them in one report, instead of trusting a single "real / fake" guess.
+Desktop app for **Windows and macOS** that checks whether an **image, video or text** is AI-generated or deepfaked. It runs several independent checks and puts them in one report, instead of trusting a single "real / fake" guess. Everything runs on your own computer; files are never uploaded.
 
 Drop a file in → get a verdict, a breakdown, forensic maps you can inspect yourself, and a PDF/JSON report.
+
+## Download
+
+Get the latest version from **[Releases](https://github.com/Open-Grapes/dl_ai_detector/releases/latest)**:
+
+| System | File | Install |
+|---|---|---|
+| Windows 10/11 (64-bit) | `dl_ai_detector-windows.zip` | Unzip anywhere and run `dl_ai_detector.exe` |
+| macOS 14+ on Apple Silicon (M1 or newer) | `dl_ai_detector-mac-apple-silicon.dmg` | Open the .dmg and drag the app to Applications. First launch: System Settings → Privacy & Security → **Open Anyway** (the app isn't notarized by Apple) |
+
+Intel Macs aren't supported: PyTorch, which runs the detection models, no longer makes Intel-Mac builds.
+
+The app downloads its detection models the first time you use it (see below) and can update itself with **Check for updates…**.
 
 ## What it checks
 
@@ -40,7 +53,7 @@ The app ships **without** any models. The first time you start it, it offers to 
 - **Remove selected** / **Remove all** to free up disk space
 - **Open folder**
 
-Models are stored in **`%LOCALAPPDATA%\dl_ai_detector\models`** (e.g. `C:\Users\<you>\AppData\Local\dl_ai_detector\models`). That folder belongs to the current Windows user, so anyone else using the app on another PC (or another account) starts fresh and downloads their own copy. `%TEMP%` is not used because Windows Storage Sense / Disk Cleanup empties it automatically.
+Models are stored in **`%LOCALAPPDATA%\dl_ai_detector\models`** on Windows (e.g. `C:\Users\<you>\AppData\Local\dl_ai_detector\models`) and **`~/Library/Application Support/dl_ai_detector/models`** on macOS. That folder belongs to the current user, so anyone else using the app on another PC (or another account) starts fresh and downloads their own copy. `%TEMP%` is not used because Windows Storage Sense / Disk Cleanup empties it automatically.
 
 | ★ | Model | Type | Size | License |
 |---|---|---|---|---|
@@ -55,7 +68,7 @@ Models are stored in **`%LOCALAPPDATA%\dl_ai_detector\models`** (e.g. `C:\Users\
 | ★ | [fakespot-ai/roberta-base-ai-text-detection-v1](https://huggingface.co/fakespot-ai/roberta-base-ai-text-detection-v1) (RoBERTa) | AI text | 499 MB | Apache-2.0 |
 |   | [desklib/ai-text-detector-v1.01](https://huggingface.co/desklib/ai-text-detector-v1.01) (DeBERTa-v3-large) | AI text | 1.7 GB | MIT |
 
-★ = recommended. The image/video set is offered on first run; the text set is offered the first time you analyse text. Settings and the log live next to the models in `%LOCALAPPDATA%\dl_ai_detector`.
+★ = recommended. The image/video set is offered on first run; the text set is offered the first time you analyse text. Settings and the log live next to the models.
 
 ## How to read the verdict
 
@@ -69,7 +82,7 @@ No detector is 100% reliable. If metadata is missing, that proves nothing, becau
 
 **Check for updates…** (toolbar) checks two things at once and **Update all** installs both:
 
-- **The app**: asks GitHub for the latest release of this repo. If its tag (e.g. `v1.4.0`) is newer than the running version, it downloads `dl_ai_detector-windows.zip` from that release, and a small helper swaps the files once the app closes and restarts it. Models and settings in `%LOCALAPPDATA%` are kept. If you're already on the latest version it says so.
+- **The app**: asks GitHub for the latest release of this repo. If its tag (e.g. `v1.4.0`) is newer than the running version, it downloads the file for this computer from that release (`dl_ai_detector-windows.zip` or `dl_ai_detector-mac-apple-silicon.dmg`), and a small helper swaps the app once it closes and restarts it. Downloaded models and settings are kept. If you're already on the latest version it says so.
 - **Models**: same as *Check for updates* in the Models window.
 
 The app also checks quietly at start-up and changes the button to **⬆ Update to x.y.z** when there's a new version.
@@ -77,7 +90,7 @@ The app also checks quietly at start-up and changes the button to **⬆ Update t
 **Publishing an update**: bump `APP_VERSION` in `dlai/common.py`, build, then create a GitHub release whose tag is that version with the zip attached:
 
 ```bat
-gh release create v1.4.0 dist\Windows\dl_ai_detector-windows.zip --title "1.4.0" --notes "What changed"
+gh release create v1.4.0 dist\Windows\dl_ai_detector-windows.zip dist\MacOS\dl_ai_detector-mac-apple-silicon.dmg --title "1.4.0" --notes "What changed"
 ```
 
 **Private repo**: GitHub hides private releases from everyone who isn't logged in, so other users only get updates once the repo is public. On a PC logged in with the GitHub CLI (`gh auth login`) as an account with access, the check uses that login, so the owner can test updates while the repo is private. No login or token is built into the app.
@@ -99,13 +112,23 @@ Command-line mode (prints JSON, optional report):
 
 If a CUDA build of PyTorch is installed instead, the models run on the GPU automatically.
 
-## Build the .exe
+## Build the Windows .exe
 
 ```bat
 .venv\Scripts\python build.py
 ```
 
 Output: `dist\Windows\dl_ai_detector\dl_ai_detector.exe` plus `dist\Windows\dl_ai_detector-windows.zip`. The build uses CPU PyTorch to keep it small. Analysis takes a few seconds per image and roughly 5–15 s per minute of video.
+
+## Build the Mac app
+
+A Mac app has to be built on a Mac. GitHub Actions does it: **Actions → Build macOS app → Run workflow** (or `gh workflow run mac.yml`). The workflow runs `build_mac.py` on an Apple Silicon Mac, which builds the `.app`, tests it (downloads a few models and analyses a test image, video and text inside the built app, opens the window, checks for updates, and runs the updater against the new .dmg), then uploads `dl_ai_detector-mac-apple-silicon.dmg` and screenshots as artifacts. Download them into `dist/MacOS`:
+
+```bat
+gh run download <run-id> -n dl_ai_detector-mac-apple-silicon -D dist\MacOS
+```
+
+On your own Mac: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt certifi && .venv/bin/python build_mac.py`.
 
 ## Layout
 

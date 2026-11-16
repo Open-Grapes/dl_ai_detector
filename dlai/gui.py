@@ -59,7 +59,8 @@ class App:
         if sys.platform == "darwin":       # Finder "Open With" / files dropped on the Dock icon
             self.root.createcommand("::tk::mac::OpenDocument", lambda *f: f and self.route(f[0]))
         self.root.title(f"{APP_NAME} {APP_VERSION}")
-        self.root.geometry("1320x860")
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        self.root.geometry(f"{min(1320, sw - 40)}x{min(860, sh - 90)}")        # fit small screens
         self.root.minsize(980, 640)
         try:
             self.root.iconbitmap(default=str(resource("assets/icon.ico")))
