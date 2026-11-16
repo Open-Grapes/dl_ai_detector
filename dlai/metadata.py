@@ -44,6 +44,36 @@ GEN_KEYS = {
     "novelai": "NovelAI",
 }
 
+# tags that show which AI platform exported the file (the platform also hosts upscalers/editors, so: a hint)
+PLATFORM_KEYS = {
+    "hf-job-id": "file was exported by Higgsfield (AI generation platform)",
+}
+
+# model ids / tool names found in Content Credentials -> what people call them
+FRIENDLY = [
+    ("seedance", "ByteDance Seedance"), ("seedream", "ByteDance Seedream"),
+    ("dreamina", "ByteDance Dreamina"), ("byteplus", "BytePlus ModelArk (ByteDance)"), ("jimeng", "ByteDance Jimeng"),
+    ("sora", "OpenAI Sora"), ("gpt-image", "OpenAI GPT Image"), ("dall", "OpenAI DALL·E"), ("chatgpt", "OpenAI ChatGPT"),
+    ("veo", "Google Veo"), ("imagen", "Google Imagen"), ("nano banana", "Google Gemini image (Nano Banana)"),
+    ("gemini", "Google Gemini"), ("firefly", "Adobe Firefly"), ("kling", "Kuaishou Kling"),
+    ("runway", "Runway"), ("gen-4", "Runway Gen-4"), ("hailuo", "MiniMax Hailuo"), ("minimax", "MiniMax"),
+    ("midjourney", "Midjourney"), ("flux", "Black Forest Labs FLUX"), ("ideogram", "Ideogram"),
+    ("luma", "Luma"), ("ray2", "Luma Ray"), ("pika", "Pika"), ("wan", "Alibaba Wan"), ("hunyuan", "Tencent Hunyuan"),
+    ("higgsfield", "Higgsfield"), ("vidu", "Vidu"), ("pixverse", "PixVerse"), ("grok", "xAI Grok / Aurora"),
+    ("bing", "Microsoft Bing Image Creator"), ("designer", "Microsoft Designer"), ("copilot", "Microsoft Copilot"),
+    ("stable", "Stability AI Stable Diffusion"), ("leonardo", "Leonardo.Ai"), ("canva", "Canva"),
+    ("photoshop", "Adobe Photoshop"), ("lightroom", "Adobe Lightroom"),
+]
+
+
+def friendly_model(s):
+    low = (s or "").lower()
+    for k, v in FRIENDLY:
+        if k in low:
+            ver = re.search(r"(?<![\d.])(\d+(?:[.-]\d+)?)(?![\d.])", low.split(k, 1)[1])
+            return v + (f" {ver.group(1).replace('-', '.')}" if ver and k not in ("byteplus",) else "")
+    return ""
+
 
 def _scan_keywords(text):
     low = text.lower()
@@ -106,7 +136,8 @@ def c2pa_check(path):
     active = store.get("active_manifest")
     mans = store.get("manifests", {})
     res = {"present": True, "parsed": True, "manifests": len(mans), "generators": [], "source_types": [],
-           "actions": [], "signer": None, "issues": []}
+           "actions": [], "signer": None, "issues": [], "made": [],
+           "state": store.get("validation_state") or ""}
     for mid, man in mans.items():
         gen = man.get("claim_generator") or ""
         for gi in man.get("claim_generator_info") or []:
@@ -121,8 +152,18 @@ def c2pa_check(path):
             for act in data.get("actions") or []:
                 name = act.get("action", "")
                 dst = act.get("digitalSourceType") or ""
-                sw = (act.get("softwareAgent") or {})
-                sw = sw.get("name") if isinstance(sw, dict) else sw
+                swd = act.get("softwareAgent") or {}
+                sw = swd.get("name") if isinstance(swd, dict) else swd
+                prm = act.get("parameters") or {}
+                if mid == active and (dst or prm.get("model_name") or sw):
+                    tool = sw or prm.get("name") or ""
+                    if isinstance(swd, dict) and swd.get("version"):
+                        tool += f" {swd['version']}"
+                    model = prm.get("model_name") or prm.get("model") or ""
+                    res["made"].append({"action": name.replace("c2pa.", ""), "tool": tool.strip(), "model": model,
+                                        "model_friendly": friendly_model(model or tool),
+                                        "when": act.get("when") or prm.get("time") or "",
+                                        "source_type": dst.rsplit("/", 1)[-1]})
                 res["actions"].append(" ".join(x for x in (name, sw or "", dst.rsplit("/", 1)[-1]) if x))
                 if dst:
                     res["source_types"].append(dst.rsplit("/", 1)[-1])
@@ -155,6 +196,8 @@ def inspect_image(path):
                 kl = k.lower()
                 if kl in GEN_KEYS:
                     proof.append(f"{GEN_KEYS[kl]} found in '{k}' chunk")
+                elif kl in PLATFORM_KEYS:
+                    hints.append(f"'{k}' tag: {PLATFORM_KEYS[kl]}")
                 elif kl in ("comment", "description", "software", "source", "title", "author") and isinstance(v, str):
                     if "steps:" in v.lower() and "sampler" in v.lower():
                         proof.append(f"Generation parameters in '{k}'")
@@ -235,7 +278,37 @@ def inspect_video(path):
     return _conclude(fields, findings, proof, hints, False, c2, meta_text)
 
 
+def _made(c2):
+    """'How this was made' card from Content Credentials (like Adobe's Inspect page)."""
+    if not c2 or not c2.get("parsed"):
+        return None
+    m = next((x for x in c2["made"] if x["source_type"] or x["model"]), None) or (c2["made"] or [None])[0]
+    untrusted = any("untrusted" in i.lower() for i in c2["issues"])
+    broken = any(k in i.lower() for i in c2["issues"] for k in ("mismatch", "invalid", "revoked", "expired"))
+    st = (m or {}).get("source_type", "")
+    return {"tool": (m or {}).get("tool", "") or ", ".join(c2["generators"]),
+            "model": (m or {}).get("model", ""),
+            "model_friendly": (m or {}).get("model_friendly", "") or friendly_model(" ".join(c2["generators"])),
+            "when": (m or {}).get("when", ""),
+            "action": (m or {}).get("action", ""),
+            "source_type": st,
+            "source_label": AI_SOURCE_TYPES.get(st.lower(), st),
+            "ai": "trained" in st.lower(),
+            "app": ", ".join(c2["generators"]),
+            "signer": c2.get("signer") or "",
+            "trust": ("tampered or invalid signature" if broken else
+                      "signed, but by a source not on the C2PA trust list" if untrusted else "signed and trusted")}
+
+
 def _conclude(fields, findings, proof, hints, camera, c2, meta_text):
+    made = _made(c2)
+    if made:
+        if made["model"] or made["model_friendly"]:
+            fields["AI model (C2PA)"] = (made["model_friendly"] + (f"  [{made['model']}]" if made["model"] else "")).strip()
+        if made["tool"]:
+            fields["Created with (C2PA)"] = made["tool"]
+        if made["when"]:
+            fields["Created on (C2PA)"] = made["when"]
     if c2:
         if c2.get("parsed"):
             fields["C2PA generators"] = ", ".join(c2["generators"]) or "—"
@@ -249,8 +322,10 @@ def _conclude(fields, findings, proof, hints, camera, c2, meta_text):
             note = (" (signer not on the C2PA trust list)"
                     if any("untrusted" in i.lower() for i in c2["issues"]) else "")
             if trained:
+                by = (made or {}).get("model_friendly") or (made or {}).get("model") or (made or {}).get("tool")
                 proof.append("C2PA Content Credentials declare " +
-                             ", ".join(AI_SOURCE_TYPES[s.lower()] for s in trained) + note)
+                             ", ".join(AI_SOURCE_TYPES[s.lower()] for s in trained) +
+                             (f" — made with {by}" if by else "") + note)
             elif ai_st:
                 hints.append("C2PA Content Credentials declare " + ", ".join(AI_SOURCE_TYPES[s.lower()] for s in ai_st)
                              + " — computer-generated/CGI, not necessarily AI" + note)
@@ -279,7 +354,7 @@ def _conclude(fields, findings, proof, hints, camera, c2, meta_text):
     else:
         verdict, level = "No AI tags found", "none"
     return {"verdict": verdict, "level": level, "proof": proof, "hints": hints, "findings": findings,
-            "fields": fields, "camera": camera, "c2pa": c2}
+            "fields": fields, "camera": camera, "c2pa": c2, "made": made}
 
 
 def inspect(path, kind):

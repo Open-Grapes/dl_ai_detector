@@ -8,6 +8,8 @@ Drop a file in → get a verdict, a breakdown, forensic maps you can inspect you
 
 | Stage | What it does | Needs models? |
 |---|---|---|
+| **Preview & file info** | Plays the video right away with a scrub bar, frame stepping (← →, Shift = 1 s) and a score strip under the picture: one bar per analysed frame, coloured by AI score, which you can also click to seek. The AI % at the playhead updates as you scrub. When you pause on a frame, that exact frame can be scored too (*Score this frame*, or automatically with *Score frames I stop on*). Next to it: filename, duration, size, resolution, container, frame rate, codec, bit rate, audio | Scoring only |
+| **How this was made** | Reads C2PA Content Credentials like Adobe's Inspect page: the AI model (e.g. `dreamina-seedance-2-5` → *ByteDance Seedance 2.5*), the app that created it, when, who signed it, and whether the signer is on the C2PA trust list | No |
 | **Metadata & signatures** | C2PA Content Credentials (Adobe Firefly, OpenAI DALL·E / Sora, Google, Microsoft …), IPTC/XMP *Digital Source Type* (`trainedAlgorithmicMedia`), generator parameters left in PNG chunks / EXIF (Automatic1111, Forge, ComfyUI, InvokeAI, NovelAI, Fooocus), generator names in software tags, video container/encoder tags | No |
 | **AI pixel score** | Hugging Face image classifiers score the whole image (and a centre crop at higher detail). Several models are averaged; if they disagree a lot, the verdict says so | Yes |
 | **Face deepfake scan** | Finds faces (OpenCV YuNet), crops them and scores each face with a deepfake classifier: much more sensitive to face swaps than scanning the whole scene | Yes |
@@ -22,7 +24,7 @@ Drop a file in → get a verdict, a breakdown, forensic maps you can inspect you
 
 The app ships **without** any models. The first time you start it, it offers to download the recommended set (~1.5 GB). Click **Models…** any time to:
 
-- **Download** recommended or selected models
+- **Download** recommended, all, or selected models
 - **Check for updates.** This asks Hugging Face whether each model's weight files changed (by content hash, so README-only edits upstream don't count)
 - **Install updates.** Downloads into a temporary folder and swaps the new version in only when it's complete. A cancelled update keeps the old one.
 - **Remove selected** / **Remove all** to free up disk space
@@ -83,6 +85,8 @@ dlai/
   metadata.py   C2PA, XMP/IPTC, PNG chunks, EXIF, video container tags
   forensics.py  ELA, FFT, noise map, JPEG quality, compression warning
   video.py      frame sampling, temporal warp check, face finder
+  player.py     Preview tab: video player, score strip, per-frame scoring
+  fileinfo.py   file facts (duration, resolution, codec, …)
   pipeline.py   runs everything and builds the verdict
   report.py     JSON / PDF / PNG export
   charts.py     timeline charts (PIL)

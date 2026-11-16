@@ -11,7 +11,8 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
-from . import charts, models, report, theme
+from . import charts, fileinfo, models, report, theme
+from .player import Player
 from .common import (APP_NAME, APP_VERSION, IMAGE_EXT, MODELS_DIR, VIDEO_EXT, fmt_size, fmt_t, kind_of,
                      load_settings, log, resource, save_settings)
 
@@ -42,7 +43,7 @@ class App:
     def __init__(self, files=()):
         self.root = TkinterDnD.Tk() if TkinterDnD else tk.Tk()
         self.root.title(f"{APP_NAME} {APP_VERSION}")
-        self.root.geometry("1240x800")
+        self.root.geometry("1320x860")
         self.root.minsize(980, 640)
         try:
             self.root.iconbitmap(default=str(resource("assets/icon.ico")))
@@ -77,7 +78,7 @@ class App:
         self.export_btn = ttk.Button(bar, text="Export report…", command=self.export, state="disabled")
         self.export_btn.pack(side="left", padx=(6, 0))
         ttk.Label(bar, text="Max video frames:", style="Muted.TLabel").pack(side="left", padx=(18, 4))
-        cb = ttk.Combobox(bar, textvariable=self.frames, values=("8", "16", "24", "32", "48", "64"), width=4,
+        cb = ttk.Combobox(bar, textvariable=self.frames, values=("8", "16", "24", "32", "48", "64", "96", "128"), width=4,
                           state="readonly")
         cb.pack(side="left")
         cb.bind("<<ComboboxSelected>>", lambda e: self._save())
@@ -141,6 +142,16 @@ class App:
         nb = ttk.Notebook(right)
         nb.pack(fill="both", expand=True)
         self.nb = nb
+        # Preview: player + file facts
+        pv = ttk.Frame(nb, padding=8)
+        side = ttk.Frame(pv, width=340)
+        side.pack(side="right", fill="y", padx=(10, 0))
+        side.pack_propagate(False)
+        self.info_txt = self._text(side)
+        self.info_txt.master.pack(fill="both", expand=True)
+        self.player = Player(pv, self)
+        self.player.pack(side="left", fill="both", expand=True)
+        nb.add(pv, text="Preview")
         # Summary
         self.summary = self._text(nb)
         nb.add(self.summary.master, text="Summary")
@@ -194,7 +205,7 @@ class App:
     def apply_theme(self):
         self.p = theme.apply(self.root, self.dark.get())
         p = self.p
-        for t in (self.summary, self.faces_txt, self.tl_txt):
+        for t in (self.summary, self.faces_txt, self.tl_txt, self.info_txt):
             t.configure(bg=p["field"], fg=p["text"], insertbackground=p["text"], selectbackground=p.get("select", "#cce0ff"))
             t.tag_configure("h", font=(theme.UI, 12, "bold"), spacing1=10, spacing3=4)
             t.tag_configure("big", font=(theme.UI, 16, "bold"), spacing3=6)
@@ -203,6 +214,9 @@ class App:
             for k, c in p["tags"].items():
                 t.tag_configure(k, foreground=c)
         self.f_canvas.configure(bg=p["field"])
+        self.info_txt.tag_configure("k", foreground=p["muted"], font=(theme.UI, 9))
+        self.info_txt.tag_configure("v", font=(theme.UI, 10, "bold"), spacing3=5)
+        self.player.apply_theme()
         self.v_label.configure(bg=p["bg"], fg=p["tags"].get(self.R["verdict"]["level"], p["text"]) if self.R else p["muted"])
         self._save()
         if self.R:
@@ -292,6 +306,11 @@ class App:
         self.settings["last_dir"] = str(path.parent)
         self._save()
         self._show_preview(path)
+        kind = kind_of(path) or "image"
+        self.R, self.imgs = None, {}
+        self.player.load(path, kind)
+        self.render_info(path, kind)
+        self.nb.select(0)
         self.busy = True
         self.cancel.clear()
         self.cancel_btn.configure(state="normal")
@@ -387,13 +406,17 @@ class App:
         pb["value"] = (fc.get("max_score") or 0) * 100
         val.configure(text=(f"{fmt_pct(fc['max_score'])} max · {fc['count']} face(s)" if fc.get("max_score") is not None
                             else "no faces found" if fc.get("enabled") else "face models not installed"))
-        self.rows["meta"][1].configure(text=R["metadata"]["verdict"],
+        made = R["metadata"].get("made") or {}
+        by = made.get("model_friendly") or made.get("model")
+        self.rows["meta"][1].configure(text=R["metadata"]["verdict"] + (f" · {by}" if by else ""),
                                        foreground=p["tags"].get(R["metadata"]["level"], p["muted"]))
         comp = (R.get("compression") or {}).get("warning")
         self.rows["comp"][1].configure(text=comp.replace("Compression warning: ", "⚠ ") if comp else "No heavy compression detected",
                                        foreground=p["tags"]["warn"] if comp else p["muted"])
         self.export_btn.configure(state="normal")
         self.status.configure(text=f"Done in {R['elapsed_s']} s on {R['device'].upper()}")
+        self.player.set_results(R)
+        self.render_info(R["file"]["path"], R["file"]["kind"])
         self.render_summary()
         self.render_meta()
         self.show_forensic()
@@ -430,6 +453,12 @@ class App:
             out.append((f"  · {ln}\n", "muted"))
         c2 = m.get("c2pa")
         out.append((f"  C2PA Content Credentials: {'present' if c2 else 'none found'}\n", "muted"))
+        made = m.get("made")
+        if made and (made.get("model") or made.get("tool")):
+            out.append((f"  How it was made: {made.get('model_friendly') or made.get('model') or made.get('tool')}"
+                        f"{' (' + made['model'] + ')' if made.get('model') and made.get('model_friendly') else ''}"
+                        f" via {made.get('tool') or '?'} · signed by {made.get('signer') or '?'} · {made['trust']}\n",
+                        "ai" if made.get("ai") else "muted"))
         px = R.get("pixel") or {}
         out.append(("Pixel models\n", "h"))
         names = {u["key"]: u for u in R["models_used"]}
@@ -454,6 +483,42 @@ class App:
                     "files, screenshots, CGI and heavily edited photos. Use the forensic maps to check with your own "
                     "eyes.\n", "small"))
         self._write(self.summary, out)
+
+    def render_info(self, path, kind):
+        try:
+            rows = fileinfo.info(path, kind)
+        except Exception as e:
+            rows = [("Error", str(e))]
+        made = self.R["metadata"].get("made") if self.R else None
+        out = [("How this was made\n", "h")]
+        if not self.R:
+            out.append(("Analyse the file to read its Content Credentials.\n", "muted"))
+        elif made:
+            if made.get("model_friendly") or made.get("model"):
+                out += [("AI model\n", "k"), ((made.get("model_friendly") or made["model"]) + "\n", ("v", "ai"))]
+                if made.get("model") and made.get("model_friendly"):
+                    out.append((f"model id: {made['model']}\n", "small"))
+            if made.get("tool"):
+                out += [("Created with\n", "k"), (made["tool"] + "\n", "v")]
+            if made.get("source_label"):
+                out += [("Source type\n", "k"), (made["source_label"] + "\n", ("v", "ai") if made["ai"] else "v")]
+            if made.get("when"):
+                out += [("Created on\n", "k"), (made["when"].replace("T", " ").replace("Z", " UTC") + "\n", "v")]
+            if made.get("signer"):
+                out += [("Signed by\n", "k"), (made["signer"] + "\n", "v")]
+            ok = made["trust"].startswith("signed and")
+            out.append((("✔ " if ok else "⚠ ") + made["trust"] + "\n", "ok" if ok else "warn"))
+            out.append(("Read from the file's C2PA Content Credentials.\n", "small"))
+        else:
+            c2 = self.R["metadata"].get("c2pa")
+            out.append(("No Content Credentials (C2PA) in this file" +
+                        (" (they exist but couldn't be read)" if c2 else "") +
+                        ". Most apps, social sites and metadata-removal tools strip them, so their absence proves "
+                        "nothing either way.\n", "muted"))
+        out.append(("File information\n", "h"))
+        for k, v in rows:
+            out += [(k + "\n", "k"), (str(v) + "\n", "v")]
+        self._write(self.info_txt, out)
 
     def render_meta(self):
         t = self.meta_tree
@@ -607,7 +672,7 @@ class ModelsDialog:
         self.remote = {}     # key -> (status, info)
         w = self.win = tk.Toplevel(app.root)
         w.title("Models")
-        w.geometry("960x520")
+        w.geometry("1100x540")
         w.transient(app.root)
         w.configure(bg=app.p["bg"])
         top = ttk.Frame(w, padding=(12, 10, 12, 4))
@@ -638,6 +703,7 @@ class ModelsDialog:
         for text, cmd, style in (
                 ("Download recommended", lambda: self.download([m["key"] for m in models.CATALOG if m["recommended"]
                                                                 and not models.is_installed(m["key"])]), "Accent.TButton"),
+                ("Download all", self.download_all, "TButton"),
                 ("Download selected", lambda: self.download(self._sel(installed=False)), "TButton"),
                 ("Check for updates", self.check_updates, "TButton"),
                 ("Install updates", self.install_updates, "TButton"),
@@ -777,6 +843,20 @@ class ModelsDialog:
                 self.remote.pop(k, None)
                 self._ui(self.refresh)
         self._run("Starting download…", fn)
+
+    def download_all(self):
+        keys = [m["key"] for m in models.CATALOG if not models.is_installed(m["key"])]
+        if not keys:
+            messagebox.showinfo("Models", "All models are already installed.", parent=self.win)
+            return
+        size = sum(models.BY_KEY[k]["size_mb"] for k in keys)
+        nc = [models.BY_KEY[k]["name"] for k in keys if "NC" in models.BY_KEY[k]["license"]]
+        note = ("\n\nNote: " + ", ".join(nc) + " is licensed for non-commercial use only.") if nc else ""
+        if messagebox.askyesno("Download all models",
+                               f"Download {len(keys)} model(s), about {fmt_size(size)}?\n\n"
+                               "More models = a steadier average, but each one adds analysis time." + note,
+                               parent=self.win):
+            self.download(keys)
 
     def check_updates(self):
         keys = [m["key"] for m in models.CATALOG if models.is_installed(m["key"])]

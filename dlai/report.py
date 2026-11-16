@@ -132,6 +132,12 @@ def _pdf_pages(R, imgs, charts_):
     P.text("Breakdown", 28, True)
     m = R["metadata"]
     P.text(f"Metadata result: {m['verdict']}", 22, True)
+    made = m.get("made") or {}
+    if made.get("model") or made.get("tool"):
+        P.text(f"How it was made: {made.get('model_friendly') or made.get('model') or made.get('tool')}"
+               f"{' (' + made['model'] + ')' if made.get('model') and made.get('model_friendly') else ''}"
+               f" via {made.get('tool') or '?'}, signed by {made.get('signer') or '?'} ({made['trust']})", 20,
+               indent=20)
     for ln in m["proof"] + m["hints"] + m["findings"]:
         P.text("– " + ln, 20, indent=20)
     px = R.get("pixel") or {}
