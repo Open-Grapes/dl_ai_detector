@@ -4,6 +4,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import tkinter as tk
@@ -17,7 +18,7 @@ from . import charts, fileinfo, models, report, textio, theme
 from .player import Player
 from .textui import TextPage
 from .common import (APP_NAME, APP_VERSION, IMAGE_EXT, MODELS_DIR, RELEASE_ASSET, VIDEO_EXT, fmt_size, fmt_t, kind_of,
-                     load_settings, log, resource, save_settings)
+                     load_settings, log, open_path, resource, save_settings)
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -45,7 +46,18 @@ def fmt_pct(x):
 
 class App:
     def __init__(self, files=()):
-        self.root = TkinterDnD.Tk() if TkinterDnD else tk.Tk()
+        global TkinterDnD
+        self.root = None
+        if TkinterDnD:
+            try:
+                self.root = TkinterDnD.Tk()
+            except Exception as e:         # tkdnd library couldn't load: run without drag-and-drop
+                log(f"drag-and-drop unavailable: {e!r}")
+                TkinterDnD = None
+        if self.root is None:
+            self.root = tk.Tk()
+        if sys.platform == "darwin":       # Finder "Open With" / files dropped on the Dock icon
+            self.root.createcommand("::tk::mac::OpenDocument", lambda *f: f and self.route(f[0]))
         self.root.title(f"{APP_NAME} {APP_VERSION}")
         self.root.geometry("1320x860")
         self.root.minsize(980, 640)
@@ -677,7 +689,7 @@ class App:
         self.status.configure(text=f"Report saved to {out}")
         if messagebox.askyesno(APP_NAME, f"Report saved (PDF, JSON and forensic PNGs) to:\n{out}\n\nOpen the folder?",
                                parent=self.root):
-            os.startfile(out)
+            open_path(out)
 
     def open_models(self, auto=None):
         if self.models_dlg and self.models_dlg.win.winfo_exists():
@@ -827,7 +839,7 @@ class UpdateDialog:
             self.app_lbl.configure(text=f"Version {i['version']} is available", fg=p["tags"]["update"])
             ok, why = self.u.can_install()
             if not i.get("asset"):
-                ok, why = False, f"That release has no {RELEASE_ASSET} to download yet."
+                ok, why = False, f"That release has no {self.u.asset_name()} to download yet."
             size = f" · {fmt_size(i['asset']['size'] / 1e6)} download" if i.get("asset") else ""
             self.app_sub.configure(text=(f"Released {i['published']}{size}{via}" if ok else why))
             self._can_app = ok
@@ -905,7 +917,8 @@ class UpdateDialog:
                         self.cancel)
                     prog(0.99, "Unpacking…")
                     helper, _ = self.u.prepare_install(pkg, os.getpid())
-                    shutil.rmtree(work_dir, ignore_errors=True)
+                    if not sys.platform == "darwin":       # Mac: the helper mounts the .dmg from here
+                        shutil.rmtree(work_dir, ignore_errors=True)
             except models.Cancelled:
                 err = "Cancelled"
             except self.u.UpdateError as e:
@@ -1198,7 +1211,7 @@ class ModelsDialog:
 
     def open_folder(self):
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        os.startfile(MODELS_DIR)
+        open_path(MODELS_DIR)
 
     def close(self):
         if self.busy:

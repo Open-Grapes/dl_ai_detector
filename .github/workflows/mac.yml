@@ -1,0 +1,43 @@
+name: Build macOS app
+
+# Run by hand (Actions tab > Build macOS app > Run workflow, or `gh workflow run mac.yml`).
+# Not on every push: macOS build minutes are expensive on private repos.
+on:
+  workflow_dispatch:
+  push:
+    branches: [mac-build]      # test branch for Mac builds
+
+jobs:
+  build:
+    runs-on: macos-15          # Apple Silicon (PyTorch has no Intel-Mac builds any more)
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt certifi
+
+      - name: Build, smoke-test and package
+        run: python build_mac.py
+        env:
+          GH_TOKEN: ${{ github.token }}   # lets the "check for updates" test read this repo's releases
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dl_ai_detector-mac-apple-silicon
+          path: dist/MacOS/*.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: screenshots
+          path: build-mac/screenshots/
+          retention-days: 14

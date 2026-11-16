@@ -13,7 +13,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from . import charts, models, report, textio, theme
-from .common import APP_NAME, APP_VERSION, log
+from .common import APP_NAME, APP_VERSION, log, open_path
 
 HL = {  # passage highlight backgrounds: (light, dark)
     "ai": ("#ffd6d6", "#5c2427"),
@@ -70,6 +70,9 @@ class TextPage(ttk.Frame):
         self.hover.pack(fill="x", pady=(4, 0))
         try:
             from tkinterdnd2 import DND_FILES
+            from . import gui
+            if not gui.TkinterDnD:
+                raise RuntimeError("no drag-and-drop")
             self.ed.drop_target_register(DND_FILES)
             self.ed.dnd_bind("<<Drop>>", self._on_drop)
         except Exception:
@@ -417,7 +420,7 @@ class TextPage(ttk.Frame):
         self.status.configure(text=f"Report saved to {out}")
         if messagebox.askyesno(APP_NAME, f"Report saved (PDF and JSON) to:\n{out}\n\nOpen the folder?",
                                parent=self.app.root):
-            os.startfile(out)
+            open_path(out)
 
 
 def export_text(R, text, folder):

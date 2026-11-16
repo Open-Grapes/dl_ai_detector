@@ -10,3 +10,4 @@ models/
 *.bin
 *_ai_report/
 build.log
+build-mac/

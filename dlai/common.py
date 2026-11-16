@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "dl_ai_detector"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 RELEASE_ASSET = "dl_ai_detector-windows.zip"
 
 IMAGE_EXT = {"jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff", "gif", "heic", "heif", "avif", "jfif"}
@@ -16,9 +16,10 @@ VIDEO_EXT = {"mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "ts", "mts
 
 FROZEN = getattr(sys, "frozen", False)
 IS_WIN = os.name == "nt"
+IS_MAC = sys.platform == "darwin"
 
 if FROZEN:
-    APP_DIR = Path(sys.executable).resolve().parent          # folder holding the .exe
+    APP_DIR = Path(sys.executable).resolve().parent          # folder holding the .exe (Mac: .app/Contents/MacOS)
 else:
     APP_DIR = Path(__file__).resolve().parent.parent         # repo root when run from source
 
@@ -26,6 +27,8 @@ else:
 # (Not %TEMP%: Windows Storage Sense / Disk Cleanup empties it, which would silently delete GBs of models.)
 if IS_WIN:
     SUP = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
+elif IS_MAC:
+    SUP = Path.home() / "Library" / "Application Support" / APP_NAME
 else:
     SUP = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / APP_NAME
 MODELS_DIR = SUP / "models"
@@ -87,3 +90,14 @@ def resource(rel):
     base = Path(getattr(sys, "_MEIPASS", APP_DIR))
     p = base / rel
     return p if p.exists() else APP_DIR / rel
+
+
+def open_path(path):
+    """Open a file or folder with the system (Explorer / Finder)."""
+    import subprocess
+    if IS_WIN:
+        os.startfile(str(path))
+    elif IS_MAC:
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
