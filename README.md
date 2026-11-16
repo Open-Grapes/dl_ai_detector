@@ -14,9 +14,19 @@ Drop a file in → get a verdict, a breakdown, forensic maps you can inspect you
 | **AI pixel score** | Hugging Face image classifiers score the whole image (and a centre crop at higher detail). Several models are averaged; if they disagree a lot, the verdict says so | Yes |
 | **Face deepfake scan** | Finds faces (OpenCV YuNet), crops them and scores each face with a deepfake classifier: much more sensitive to face swaps than scanning the whole scene | Yes |
 | **Forensic maps** | Error Level Analysis, FFT frequency spectrum, and a noise-level map, for checking with your own eyes | No |
-| **Video timeline** | Samples ~1 frame per second (cap is configurable), plots the AI score and face score over time so a real clip with a few AI scenes spliced in stands out | Yes |
+| **Video timeline** | Samples ~1 frame per second (up to 48 frames, spread evenly over longer clips), plots the AI score and face score over time so a real clip with a few AI scenes spliced in stands out | Yes |
 | **Temporal warp check** | Compares each sampled frame with the very next frame after compensating for motion (optical flow). Spikes mean texture or edges changed more than the motion explains, e.g. AI warping or details popping in and out | No |
 | **Compression warning** | Estimates JPEG quality, spots WhatsApp/Telegram/social-style copies, screenshots and low-bitrate video, and warns that pixel scores are less reliable on them | No |
+
+### Text tab: AI text detector
+
+Paste text, type it in, or drop a document (**PDF, Word .docx, PowerPoint .pptx, OpenDocument, RTF, HTML, TXT/Markdown, subtitles**). The text is split into passages and each is scored by every installed AI-text model:
+
+- **Verdict + overall AI likelihood** (weighted by passage length) and how much of the text sits in strongly-AI passages, so a human essay with a pasted-in AI section shows up as *Mixed*
+- **Highlighted passages**: red = 75%+ likely AI, amber = uncertain, yellow = weak signal. Hover a passage to see each model's score
+- **Chatbot phrases underlined** ("delve", "it's important to note", "in today's fast-paced" …) and writing-style statistics (sentence-length variation, vocabulary, em dashes). These are context, not proof
+- Warnings for short texts (<50 words) and non-English text (the models are English-only)
+- Scanned PDFs (pictures of pages) have no text to read; run them through OCR first
 
 **Export report** saves `<name>_report.pdf`, `<name>_report.json` and the ELA/FFT/noise/timeline/face PNGs into one folder.
 
@@ -41,7 +51,11 @@ Models are stored in **`%LOCALAPPDATA%\dl_ai_detector\models`** (e.g. `C:\Users\
 |   | [prithivMLmods/Deep-Fake-Detector-v2-Model](https://huggingface.co/prithivMLmods/Deep-Fake-Detector-v2-Model) (ViT) | Face deepfake | 343 MB | Apache-2.0 |
 | ★ | [opencv/face_detection_yunet](https://huggingface.co/opencv/face_detection_yunet) | Face finder | 0.2 MB | MIT |
 
-★ = recommended (downloaded on first run). Settings and the log live next to the models in `%LOCALAPPDATA%\dl_ai_detector`.
+| ★ | [ShantanuT01/vanguard-ai-text-detector](https://huggingface.co/ShantanuT01/vanguard-ai-text-detector) (ModernBERT-large) | AI text | 1.6 GB | MIT |
+| ★ | [fakespot-ai/roberta-base-ai-text-detection-v1](https://huggingface.co/fakespot-ai/roberta-base-ai-text-detection-v1) (RoBERTa) | AI text | 499 MB | Apache-2.0 |
+|   | [desklib/ai-text-detector-v1.01](https://huggingface.co/desklib/ai-text-detector-v1.01) (DeBERTa-v3-large) | AI text | 1.7 GB | MIT |
+
+★ = recommended. The image/video set is offered on first run; the text set is offered the first time you analyse text. Settings and the log live next to the models in `%LOCALAPPDATA%\dl_ai_detector`.
 
 ## How to read the verdict
 
@@ -85,6 +99,9 @@ dlai/
   metadata.py   C2PA, XMP/IPTC, PNG chunks, EXIF, video container tags
   forensics.py  ELA, FFT, noise map, JPEG quality, compression warning
   video.py      frame sampling, temporal warp check, face finder
+  textio.py     text extraction from PDF, Word, PowerPoint, RTF, HTML …
+  textdetect.py AI text detection: passages, scoring, style statistics
+  textui.py     Text tab and text report
   player.py     Preview tab: video player, score strip, per-frame scoring
   fileinfo.py   file facts (duration, resolution, codec, …)
   pipeline.py   runs everything and builds the verdict

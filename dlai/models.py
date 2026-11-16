@@ -19,6 +19,7 @@ from .common import APP_NAME, APP_VERSION, MODELS_DIR, ensure_dirs, log
 HF = "https://huggingface.co"
 UA = f"{APP_NAME}/{APP_VERSION}"
 CLS_FILES = ("config.json", "preprocessor_config.json", "model.safetensors")
+TOK_FILES = ("config.json", "model.safetensors", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json")
 
 # kind: "image" = whole-image AI classifier, "face" = face-crop deepfake classifier, "detector" = face finder
 CATALOG = [
@@ -46,9 +47,24 @@ CATALOG = [
      "name": "Face finder (YuNet)", "ai_labels": (), "size_mb": 0.23, "recommended": True,
      "license": "MIT", "files": ("face_detection_yunet_2023mar.onnx",),
      "about": "Tiny OpenCV face detector used to crop faces for the deepfake models."},
+    # ---- AI text detectors (English). head: how to turn logits into P(AI)
+    {"key": "text-vanguard", "repo": "ShantanuT01/vanguard-ai-text-detector", "kind": "text",
+     "name": "Vanguard (ModernBERT)", "ai_labels": (), "head": "sigmoid", "size_mb": 1583, "recommended": True,
+     "license": "MIT", "files": TOK_FILES,
+     "about": "ModernBERT-large fine-tuned on ~1.1M texts (DACTYL 2.0, LLMTrace, MAGA). Part of the 2nd-place system "
+              "at PAN-CLEF 2026; best out-of-domain scores of the open detectors in its authors' comparison."},
+    {"key": "text-fakespot", "repo": "fakespot-ai/roberta-base-ai-text-detection-v1", "kind": "text",
+     "name": "Fakespot (RoBERTa)", "ai_labels": ("ai",), "head": "softmax", "size_mb": 499, "recommended": True,
+     "license": "Apache-2.0", "files": TOK_FILES + ("vocab.json", "merges.txt"),
+     "about": "Mozilla Fakespot's RoBERTa-base AI text detector. Small and fast; strong on review/web-style text."},
+    {"key": "text-desklib", "repo": "desklib/ai-text-detector-v1.01", "kind": "text",
+     "name": "Desklib (DeBERTa-v3)", "ai_labels": (), "head": "desklib", "size_mb": 1736, "recommended": False,
+     "license": "MIT", "files": TOK_FILES + ("added_tokens.json", "spm.model"),
+     "about": "DeBERTa-v3-large detector that topped the RAID benchmark (robust to paraphrasing and other attacks). "
+              "Optional third opinion; the largest and slowest text model."},
 ]
 BY_KEY = {m["key"]: m for m in CATALOG}
-KIND_LABEL = {"image": "AI image", "face": "Face deepfake", "detector": "Face finder"}
+KIND_LABEL = {"image": "AI image", "face": "Face deepfake", "detector": "Face finder", "text": "AI text"}
 
 
 class Cancelled(Exception):
@@ -227,10 +243,83 @@ class Classifier:
         return out
 
 
+class TextClassifier:
+    """English AI-text detector. predict(list_of_str) -> list of P(AI)."""
+    MAX_TOKENS = 512
+
+    def __init__(self, key):
+        import torch
+        from transformers import AutoTokenizer
+        from transformers.utils import logging as hf_logging
+        hf_logging.set_verbosity_error()
+        self.torch = torch
+        self.spec = BY_KEY[key]
+        d = str(model_dir(key))
+        self.tok = AutoTokenizer.from_pretrained(d)
+        head = self.spec["head"]
+        if head == "desklib":
+            self.model = _desklib(d)
+        else:
+            from transformers import AutoModelForSequenceClassification
+            self.model = AutoModelForSequenceClassification.from_pretrained(d)
+        self.model.eval().to(device())
+        self.ai_idx = None
+        if head == "softmax":
+            labels = {int(k): v.lower() for k, v in self.model.config.id2label.items()}
+            self.ai_idx = [i for i, v in labels.items() if v in self.spec["ai_labels"]]
+            if not self.ai_idx:
+                raise RuntimeError(f"{key}: none of {self.spec['ai_labels']} in labels {labels}")
+
+    def predict(self, texts, batch=4):
+        out = []
+        for i in range(0, len(texts), batch):
+            enc = self.tok(texts[i:i + batch], truncation=True, max_length=self.MAX_TOKENS, padding=True,
+                           return_tensors="pt").to(device())
+            with self.torch.inference_mode():
+                if self.spec["head"] == "desklib":
+                    logits = self.model(enc["input_ids"], enc["attention_mask"])
+                else:
+                    logits = self.model(**{k: v for k, v in enc.items() if k != "token_type_ids"}).logits
+            logits = logits.float()
+            if self.ai_idx is not None:
+                out += logits.softmax(-1)[:, self.ai_idx].sum(-1).tolist()
+            else:
+                out += logits.reshape(len(logits), -1)[:, 0].sigmoid().tolist()
+        return out
+
+
+def _desklib(d):
+    """Desklib's custom head: DeBERTa-v3 backbone -> attention-masked mean pooling -> Linear(1) -> sigmoid."""
+    import torch
+    from safetensors.torch import load_file
+    from transformers import AutoConfig, AutoModel
+
+    class Desklib(torch.nn.Module):
+        def __init__(self, cfg):
+            super().__init__()
+            self.config = cfg
+            self.model = AutoModel.from_config(cfg)
+            self.classifier = torch.nn.Linear(cfg.hidden_size, 1)
+
+        def forward(self, input_ids, attention_mask):
+            h = self.model(input_ids, attention_mask=attention_mask)[0]
+            m = attention_mask.unsqueeze(-1).float()
+            pooled = (h * m).sum(1) / m.sum(1).clamp(min=1e-9)
+            return self.classifier(pooled)
+
+    net = Desklib(AutoConfig.from_pretrained(d))
+    sd = load_file(str(Path(d) / "model.safetensors"))
+    missing, unexpected = net.load_state_dict(sd, strict=False)
+    missing = [k for k in missing if "position_ids" not in k]
+    if missing:
+        raise RuntimeError(f"desklib weights incomplete: {missing[:5]}")
+    return net
+
+
 def get_classifier(key):
     with _lock:
         if key not in _loaded:
-            _loaded[key] = Classifier(key)
+            _loaded[key] = TextClassifier(key) if BY_KEY[key]["kind"] == "text" else Classifier(key)
         return _loaded[key]
 
 

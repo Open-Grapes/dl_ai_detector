@@ -48,7 +48,7 @@ def make_icon():
 def pyinstaller():
     meta = []
     for pkg in ("transformers", "torch", "safetensors", "huggingface_hub", "tokenizers", "numpy", "tqdm",
-                "regex", "requests", "packaging", "filelock", "pyyaml", "pillow", "c2pa-python", "av"):
+                "regex", "requests", "packaging", "filelock", "pyyaml", "pillow", "c2pa-python", "av", "pypdf"):
         try:
             from importlib.metadata import distribution
             distribution(pkg)
@@ -66,6 +66,10 @@ def pyinstaller():
                            "--collect-submodules", "transformers.models.swinv2",
                            "--collect-submodules", "transformers.models.vit",
                            "--collect-submodules", "transformers.models.auto",
+                           "--collect-submodules", "transformers.models.modernbert",
+                           "--collect-submodules", "transformers.models.roberta",
+                           "--collect-submodules", "transformers.models.deberta_v2",
+                           "--collect-submodules", "pypdf",
                            "--collect-data", "transformers",
                            *meta,
                            "--exclude-module", "matplotlib", "--exclude-module", "IPython",

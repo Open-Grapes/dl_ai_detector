@@ -11,8 +11,9 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
-from . import charts, fileinfo, models, report, theme
+from . import charts, fileinfo, models, report, textio, theme
 from .player import Player
+from .textui import TextPage
 from .common import (APP_NAME, APP_VERSION, IMAGE_EXT, MODELS_DIR, VIDEO_EXT, fmt_size, fmt_t, kind_of,
                      load_settings, log, resource, save_settings)
 
@@ -33,6 +34,7 @@ FORENSIC_VIEWS = {
                            "often unnaturally smooth, or carry a different noise texture than the rest."),
 }
 ICON_OK = "✓"
+VIDEO_FRAMES = 48     # ~1 frame per second up to 48 s, then spread evenly over the clip
 
 
 def fmt_pct(x):
@@ -51,7 +53,6 @@ class App:
             pass
         self.settings = load_settings()
         self.dark = tk.BooleanVar(value=self.settings.get("dark", False))
-        self.frames = tk.StringVar(value=str(self.settings.get("frames", 24)))
         self.view = tk.StringVar(value="ela")
         self.q = queue.Queue()
         self.busy = False
@@ -64,7 +65,7 @@ class App:
         self.root.after(100, self._poll)
         self.root.after(300, self.refresh_model_hint)
         if files:
-            self.root.after(400, lambda: self.analyze(files[0]))
+            self.root.after(400, lambda: self.route(files[0]))
         else:
             self.root.after(600, self.first_run)
 
@@ -77,24 +78,27 @@ class App:
         ttk.Button(bar, text="Models…", command=self.open_models).pack(side="left", padx=(6, 0))
         self.export_btn = ttk.Button(bar, text="Export report…", command=self.export, state="disabled")
         self.export_btn.pack(side="left", padx=(6, 0))
-        ttk.Label(bar, text="Max video frames:", style="Muted.TLabel").pack(side="left", padx=(18, 4))
-        cb = ttk.Combobox(bar, textvariable=self.frames, values=("8", "16", "24", "32", "48", "64", "96", "128"), width=4,
-                          state="readonly")
-        cb.pack(side="left")
-        cb.bind("<<ComboboxSelected>>", lambda e: self._save())
         ttk.Checkbutton(bar, text="Dark mode", variable=self.dark, command=self.apply_theme).pack(side="right")
         self.model_hint = ttk.Label(bar, text="", style="Muted.TLabel")
         self.model_hint.pack(side="right", padx=12)
 
-        body = ttk.PanedWindow(r, orient="horizontal")
-        body.pack(fill="both", expand=True, padx=10, pady=(4, 0))
+        self.modes = ttk.Notebook(r)
+        self.modes.bind("<<NotebookTabChanged>>", lambda e: self._mode_changed())
+        self.modes.pack(fill="both", expand=True, padx=10, pady=(4, 6))
+        media = ttk.Frame(self.modes, padding=(0, 6, 0, 0))
+        self.modes.add(media, text="  Image / Video  ")
+        self.textpage = TextPage(self.modes, self)
+        self.modes.add(self.textpage, text="  Text  ")
+        body = ttk.PanedWindow(media, orient="horizontal")
+        body.pack(fill="both", expand=True)
         left = ttk.Frame(body, width=380)
         right = ttk.Frame(body)
         body.add(left, weight=0)
         body.add(right, weight=1)
 
         self.drop = ttk.Label(left, text="Drop an image or video here\n\nor click to open\n\n"
-                                         "jpg · png · webp · mp4 · mov · mkv · webm …",
+                                         "jpg · png · webp · mp4 · mov · mkv · webm …\n"
+                                         "(PDF / Word / text files open in the Text tab)",
                               style="Drop.TLabel", anchor="center", justify="center", cursor="hand2")
         self.drop.pack(fill="x", ipady=6)
         self.drop.configure(padding=10)
@@ -217,6 +221,7 @@ class App:
         self.info_txt.tag_configure("k", foreground=p["muted"], font=(theme.UI, 9))
         self.info_txt.tag_configure("v", font=(theme.UI, 10, "bold"), spacing3=5)
         self.player.apply_theme()
+        self.textpage.apply_theme()
         self.v_label.configure(bg=p["bg"], fg=p["tags"].get(self.R["verdict"]["level"], p["text"]) if self.R else p["muted"])
         self._save()
         if self.R:
@@ -225,16 +230,23 @@ class App:
             theme.title_bar(self.models_dlg.win, self.dark.get())
 
     def _save(self):
-        self.settings.update(dark=self.dark.get(), frames=int(self.frames.get()))
+        self.settings.update(dark=self.dark.get())
         save_settings(self.settings)
 
+    def _mode_changed(self):
+        text = self.modes.index("current") == 1
+        has = self.textpage.R is not None if text else self.R is not None
+        self.export_btn.configure(state="normal" if has and not self.busy else "disabled")
+        if text:
+            self.player.pause()
+
     def refresh_model_hint(self):
-        n_img, n_face = len(models.installed("image")), len(models.installed("face"))
-        if not n_img:
+        n_img, n_face, n_txt = (len(models.installed(k)) for k in ("image", "face", "text"))
+        if not n_img and not n_txt:
             self.model_hint.configure(text="⚠ No AI models installed — click Models…")
         else:
             dev = "GPU" if self._has_cuda() else "CPU"
-            self.model_hint.configure(text=f"{n_img} image model(s) · {n_face} face model(s) · {dev}")
+            self.model_hint.configure(text=f"{n_img} image · {n_face} face · {n_txt} text model(s) · {dev}")
 
     def _has_cuda(self):
         if not hasattr(self, "_cuda"):
@@ -250,7 +262,7 @@ class App:
         self.refresh_model_hint()
         if models.installed("image") or self.settings.get("declined_models"):
             return
-        rec = [m for m in models.CATALOG if m["recommended"]]
+        rec = [m for m in models.CATALOG if m["recommended"] and m["kind"] != "text"]
         size = sum(m["size_mb"] for m in rec)
         if messagebox.askyesno(
                 "Download detection models",
@@ -258,7 +270,7 @@ class App:
                 f"Download the recommended set now (~{fmt_size(size)})?\n\n"
                 f"They are saved only for this Windows user in:\n{MODELS_DIR}\n\n"
                 "You can add, update or remove models any time with the Models… button.", parent=self.root):
-            self.open_models(auto="recommended")
+            self.open_models(auto="media")
         else:
             self.settings["declined_models"] = True
             self._save()
@@ -266,20 +278,30 @@ class App:
     def _on_drop(self, e):
         files = [f for f in self.root.tk.splitlist(e.data)]
         if files:
-            self.analyze(files[0])
+            self.route(files[0])
+
+    def route(self, path):
+        """Documents go to the Text tab, everything else to Image / Video."""
+        if textio.is_text_file(path) or Path(path).suffix.lower() == ".doc":
+            self.modes.select(self.textpage)
+            self.textpage.load_file(path)
+        else:
+            self.modes.select(0)
+            self.analyze(path)
 
     def open_file(self):
         if self.busy:
             return
-        exts = " ".join(f"*.{x}" for x in sorted(IMAGE_EXT | VIDEO_EXT))
-        f = filedialog.askopenfilename(parent=self.root, title="Choose an image or video",
+        exts = " ".join(f"*.{x}" for x in sorted(IMAGE_EXT | VIDEO_EXT | textio.TEXT_EXT))
+        f = filedialog.askopenfilename(parent=self.root, title="Choose an image, video or document",
                                        initialdir=self.settings.get("last_dir") or str(Path.home()),
-                                       filetypes=[("Images and videos", exts),
+                                       filetypes=[("Images, videos and documents", exts),
+                                                  ("Documents", " ".join(f"*.{x}" for x in sorted(textio.TEXT_EXT))),
                                                   ("Images", " ".join(f"*.{x}" for x in sorted(IMAGE_EXT))),
                                                   ("Videos", " ".join(f"*.{x}" for x in sorted(VIDEO_EXT))),
                                                   ("All files", "*.*")])
         if f:
-            self.analyze(f)
+            self.route(f)
 
     def analyze(self, path):
         if self.busy:
@@ -301,7 +323,7 @@ class App:
             if ans is None:
                 return
             if ans:
-                self.open_models(auto="recommended")
+                self.open_models(auto="media")
                 return
         self.settings["last_dir"] = str(path.parent)
         self._save()
@@ -321,7 +343,7 @@ class App:
             if pb:
                 pb["value"] = 0
             val.configure(text="…")
-        frames = int(self.frames.get())
+        frames = VIDEO_FRAMES
 
         def work():
             try:
@@ -629,6 +651,9 @@ class App:
 
     # ------------------------------------------------------------------ export / models
     def export(self):
+        if self.modes.index("current") == 1:
+            self.textpage.export()
+            return
         if not self.R:
             return
         d = filedialog.askdirectory(parent=self.root, title="Choose where to save the report",
@@ -653,8 +678,10 @@ class App:
             self.models_dlg.win.lift()
         else:
             self.models_dlg = ModelsDialog(self)
-        if auto == "recommended":
-            self.models_dlg.download([m["key"] for m in models.CATALOG if m["recommended"]
+        if auto:
+            want = {"media": lambda m: m["kind"] != "text", "text": lambda m: m["kind"] == "text"}.get(
+                auto, lambda m: True)
+            self.models_dlg.download([m["key"] for m in models.CATALOG if m["recommended"] and want(m)
                                       and not models.is_installed(m["key"])])
 
     def run(self):
