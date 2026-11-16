@@ -65,6 +65,23 @@ Models are stored in **`%LOCALAPPDATA%\dl_ai_detector\models`** (e.g. `C:\Users\
 
 No detector is 100% reliable. If metadata is missing, that proves nothing, because most sites strip it. Pixel scores can be wrong on brand-new generators, heavily compressed files, screenshots, CGI/3D renders, and heavily retouched photos. Treat the result as evidence to weigh, not a final ruling.
 
+## Updates
+
+**Check for updates…** (toolbar) checks two things at once and **Update all** installs both:
+
+- **The app**: asks GitHub for the latest release of this repo. If its tag (e.g. `v1.4.0`) is newer than the running version, it downloads `dl_ai_detector-windows.zip` from that release, and a small helper swaps the files once the app closes and restarts it. Models and settings in `%LOCALAPPDATA%` are kept. If you're already on the latest version it says so.
+- **Models**: same as *Check for updates* in the Models window.
+
+The app also checks quietly at start-up and changes the button to **⬆ Update to x.y.z** when there's a new version.
+
+**Publishing an update**: bump `APP_VERSION` in `dlai/common.py`, build, then create a GitHub release whose tag is that version with the zip attached:
+
+```bat
+gh release create v1.4.0 dist\Windows\dl_ai_detector-windows.zip --title "1.4.0" --notes "What changed"
+```
+
+**Private repo**: GitHub hides private releases from everyone who isn't logged in, so other users only get updates once the repo is public. On a PC logged in with the GitHub CLI (`gh auth login`) as an account with access, the check uses that login, so the owner can test updates while the repo is private. No login or token is built into the app.
+
 ## Run from source
 
 ```bat
