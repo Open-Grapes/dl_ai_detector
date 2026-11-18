@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15          # Apple Silicon (PyTorch has no Intel-Mac builds any more)
+    runs-on: macos-14          # Apple Silicon (PyTorch has no Intel-Mac builds any more)
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
