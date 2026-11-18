@@ -43,6 +43,17 @@ Paste text, type it in, or drop a document (**PDF, Word .docx, PowerPoint .pptx,
 
 **Export report** saves `<name>_report.pdf`, `<name>_report.json` and the ELA/FFT/noise/timeline/face PNGs into one folder.
 
+## Share via Wi-Fi
+
+**Share via Wi-Fi** (toolbar) lets phones, tablets and other computers on the same Wi-Fi use the detector in their browser, with nothing to install:
+
+- The window shows a **QR code** and the addresses (e.g. `http://192.168.0.20` and `http://dl-ai-detector.local`), each with a **Copy** button.
+- On the phone: upload photos, videos or documents (PDF, Word, PowerPoint, text…), or paste text. This computer checks them one at a time and the page shows live progress, then the **verdict**, **How this was made** (C2PA), model scores, the **video timeline**, **forensic maps** (tap to enlarge), faces, file information, or for text the **highlighted passages**. Each result has **Copy result** and **Download report (PDF)**.
+- A device only sees its own uploads. Other websites can't reach the page (Host check). There's no password: anyone on the Wi-Fi who knows the address can use it while sharing is on.
+- **Admin…**: stored uploads (kept on this computer, one folder each with its report, until you **Delete all**), the **activity log** (date, IP address, device name, MAC address, device/browser, action; filter, copy rows, open in Excel) and **Block device**: its page shows "Access ended" within seconds.
+- A reminder bar appears while Wi-Fi uploads are stored. Turning sharing off (or closing the app) tells open pages that sharing has ended.
+- Phone can't connect? Windows asks once to allow the app on networks: allow **Private networks** and set your Wi-Fi to Private. On a Mac, click **Allow** for incoming connections.
+
 ## Models: downloaded per user, never bundled
 
 The app ships **without** any models. The first time you start it, it offers to download the recommended set (~1.5 GB). Click **Models…** any time to:
@@ -80,17 +91,19 @@ No detector is 100% reliable. If metadata is missing, that proves nothing, becau
 
 ## Updates
 
-**Check for updates…** (toolbar) checks two things at once and **Update all** installs both:
+**Check for updates** (toolbar) opens a window centred over the app that checks two things at once, with a progress bar, the release notes, and **Update now** to install both:
 
-- **The app**: asks GitHub for the latest release of this repo. If its tag (e.g. `v1.4.0`) is newer than the running version, it downloads the file for this computer from that release (`dl_ai_detector-windows.zip` or `dl_ai_detector-mac-apple-silicon.dmg`), and a small helper swaps the app once it closes and restarts it. Downloaded models and settings are kept. If you're already on the latest version it says so.
+- **The app**: asks GitHub for the latest release of this repo. If its tag (e.g. `v1.6`) is newer than the running version, it downloads the file for this computer from that release (`dl_ai_detector-windows.zip` or `dl_ai_detector-mac-apple-silicon.dmg`), and a small helper swaps the app once it closes and restarts it. Downloaded models and settings are kept. If you're already on the latest version it says so.
 - **Models**: same as *Check for updates* in the Models window.
 
-The app also checks quietly at start-up and changes the button to **⬆ Update to x.y.z** when there's a new version.
+With **Check for updates automatically (once a day)** ticked (the default), the app checks quietly at most once a day and the button turns into **Update available: x.y** when there's a new version.
+
+Versions have two numbers (`1.5`, `1.6`); the window title shows it, e.g. **dl_ai_detector (v1.5)**.
 
 **Publishing an update**: bump `APP_VERSION` in `dlai/common.py`, build, then create a GitHub release whose tag is that version with the zip attached:
 
 ```bat
-gh release create v1.4.0 dist\Windows\dl_ai_detector-windows.zip dist\MacOS\dl_ai_detector-mac-apple-silicon.dmg --title "1.4.0" --notes "What changed"
+gh release create v1.6 dist\Windows\dl_ai_detector-windows.zip dist\MacOS\dl_ai_detector-mac-apple-silicon.dmg --title "1.6" --notes "What changed"
 ```
 
 **Private repo**: GitHub hides private releases from everyone who isn't logged in, so other users only get updates once the repo is public. On a PC logged in with the GitHub CLI (`gh auth login`) as an account with access, the check uses that login, so the owner can test updates while the repo is private. No login or token is built into the app.
@@ -148,4 +161,13 @@ dlai/
   report.py     JSON / PDF / PNG export
   charts.py     timeline charts (PIL)
   gui.py        window + Models manager
+  update_win.py Check for updates window (app + models)
+  updater.py    GitHub releases: check, download, swap the app after it closes
+  web.py        Share via Wi-Fi server (upload, analyse queue, results, report)
+  web_page.html the page phones see
+  wifi_win.py   Share via Wi-Fi window (QR code, addresses, Copy)
+  wifi_admin.py Wi-Fi admin (stored uploads, activity log, block devices)
+  wifi_store.py stored uploads, activity log, blocked devices
 ```
+
+Test Share via Wi-Fi like a phone would: `python -m dlai --wifi-selftest photo.jpg [document.pdf]`.
