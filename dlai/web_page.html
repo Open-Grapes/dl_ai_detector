@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dl_ai_detector</title>
+<link rel="icon" href="icon.png">
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #e3e6eb;
+    --accent: #205cd6; --accent-soft: #e8effc; --red: #c62828; --red-soft: #fdecec;
+    --orange: #b45309; --orange-soft: #fef3e2; --green: #2e7d32; --green-soft: #e8f5e9;
+    --yellow-soft: #f6f1c9; --drop: #f0f4fc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b; --card: #1c1f26; --text: #e7e9ee; --muted: #9aa3b2; --line: #2c313b;
+      --accent: #6b9bff; --accent-soft: #1f2a44; --red: #ff6b6b; --red-soft: #3a1f22;
+      --orange: #f5a524; --orange-soft: #3a2c16; --green: #5cc46a; --green-soft: #1b3221;
+      --yellow-soft: #3d3b20; --drop: #1a2030;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden], .hidden { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  header img { width: 36px; height: 36px; border-radius: 8px; }
+  header h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12.5px; }
+  .tabs { display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .tabs button { border: 0; background: transparent; color: var(--muted); padding: 8px 16px; border-radius: 7px;
+                 font: inherit; font-weight: 600; cursor: pointer; }
+  .tabs button.on { background: var(--accent); color: #fff; }
+  .drop { margin: 16px 0; border: 2px dashed var(--line); border-radius: 14px; background: var(--drop);
+          padding: 30px 16px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop strong { display: block; font-size: 16px; margin-bottom: 4px; }
+  .drop span { color: var(--muted); }
+  textarea { width: 100%; min-height: 150px; margin-top: 16px; border: 1px solid var(--line); border-radius: 12px;
+             background: var(--card); color: var(--text); font: inherit; padding: 12px; resize: vertical; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+  .bar .grow { flex: 1; }
+  .btn { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px;
+         padding: 7px 12px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .status, .muted { color: var(--muted); }
+  .note { color: var(--orange); background: var(--orange-soft); border-radius: 10px; padding: 8px 12px; margin-top: 10px; }
+  .empty { padding: 28px; text-align: center; color: var(--muted); background: var(--card);
+           border: 1px solid var(--line); border-radius: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+  .head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; }
+  .head .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .head .info { color: var(--muted); font-size: 12.5px; }
+  .badge { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .l-ai { color: var(--red); background: var(--red-soft); }
+  .l-warn { color: var(--orange); background: var(--orange-soft); }
+  .l-ok, .l-lean { color: var(--green); background: var(--green-soft); }
+  .l-none, .l-wait { color: var(--muted); background: var(--bg); }
+  .prog { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+  .prog i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .body { border-top: 1px solid var(--line); padding: 12px 14px 14px; }
+  .verdict { font-size: 19px; font-weight: 700; margin: 0 0 2px; }
+  .v-ai { color: var(--red); } .v-warn { color: var(--orange); } .v-ok, .v-lean { color: var(--green); }
+  .v-none { color: var(--muted); }
+  ul.find { margin: 8px 0 0; padding-left: 18px; }
+  ul.find li { margin: 2px 0; }
+  details { margin-top: 12px; }
+  details > summary { cursor: pointer; font-weight: 600; }
+  .made { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+  .made .k { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .made .v { font-weight: 600; }
+  .made .ai { color: var(--red); }
+  .score { display: grid; grid-template-columns: minmax(0, 190px) 1fr 44px; gap: 8px; align-items: center; margin: 5px 0; }
+  .score .track { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .score .track i { display: block; height: 100%; border-radius: 4px; }
+  .score .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score .p { text-align: right; font-weight: 600; }
+  .bg-ai { background: var(--red); } .bg-warn { background: var(--orange); } .bg-lean { background: #c9a227; }
+  .bg-ok { background: var(--green); } .bg-none { background: var(--muted); }
+  table.kv { width: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; font-size: 13px; }
+  table.kv td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; word-break: break-word; }
+  table.kv td:first-child { width: 36%; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 8px; }
+  .grid figure { margin: 0; }
+  .grid img { width: 100%; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; background: #000; }
+  .grid figcaption { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .faces img { width: 92px; height: 92px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+  .faces { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .faces div { text-align: center; font-size: 12px; font-weight: 600; }
+  svg.tl { width: 100%; height: 70px; display: block; margin-top: 8px; background: var(--bg); border-radius: 8px; }
+  .passages { margin-top: 8px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+              border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; max-height: 420px; overflow: auto; }
+  .passages span { border-radius: 4px; cursor: help; }
+  .h-ai { background: var(--red-soft); } .h-warn { background: var(--orange-soft); } .h-lean { background: var(--yellow-soft); }
+  .legend span { display: inline-block; padding: 1px 8px; border-radius: 4px; margin-right: 6px; font-size: 12px; }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .err { color: var(--red); margin-top: 6px; }
+  #zoom { position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 90; display: grid; place-items: center; padding: 12px; }
+  #zoom img { max-width: 100%; max-height: 100%; }
+  footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
+  #gone { position: fixed; inset: 0; z-index: 99; background: var(--bg); display: grid; place-items: center;
+          padding: 16px; text-align: center; }
+  #gone .ic { font-size: 44px; line-height: 1; }
+  #gone h2 { margin: 10px 0 6px; }
+  #gone p { color: var(--muted); max-width: 420px; margin: 0 auto 6px; }
+  #gone .small { font-size: 12.5px; }
+  @media (max-width: 600px) { .score { grid-template-columns: minmax(0, 120px) 1fr 40px; } }
+</style>
+</head>
+<body>
+<div id="gone" class="hidden" role="alertdialog" aria-live="assertive"><div><div class="ic" id="gone-ic"></div><h2 id="gone-h"></h2>
+<p id="gone-p"></p><p class="small" id="gone-s"></p></div></div>
+<div id="zoom" class="hidden"><img alt=""></div>
+<div class="wrap">
+  <header>
+    <img src="icon.png" alt="">
+    <div>
+      <h1>dl_ai_detector</h1>
+      <div class="sub">Is it AI-generated? Checked on the computer that's sharing this page.</div>
+    </div>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="on" data-mode="media">Image / Video</button>
+    <button data-mode="text">Text</button>
+  </div>
+
+  <div id="pane-media">
+    <div id="drop" class="drop" tabindex="0">
+      <strong>Drop photos or videos here</strong>
+      <span>or tap to choose. You get a verdict, how it was made (if the file says), forensic maps and a PDF report.</span>
+    </div>
+  </div>
+  <div id="pane-text" class="hidden">
+    <textarea id="txt" placeholder="Paste or type text here (English works best, 150+ words)…"></textarea>
+    <div class="bar">
+      <span id="words" class="status grow"></span>
+      <button id="check-txt" class="btn primary">Check text</button>
+    </div>
+    <div id="drop2" class="drop" tabindex="0" style="margin-top:4px">
+      <strong>…or drop a document</strong>
+      <span>PDF, Word (.docx), PowerPoint (.pptx), text, HTML, RTF</span>
+    </div>
+  </div>
+  <input id="picker" type="file" multiple hidden>
+  <div id="models-note" class="note hidden"></div>
+
+  <div class="bar">
+    <span id="status" class="status grow"></span>
+    <button id="clear" class="btn">Clear list</button>
+  </div>
+  <div id="list"><div class="empty">Nothing checked yet.</div></div>
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pct = x => x == null ? "—" : Math.round(x * 100) + "%";
+const lvl = s => s == null ? "none" : s >= .75 ? "ai" : s >= .5 ? "warn" : s >= .25 ? "lean" : "ok";
+const size = n => n > 1e9 ? (n/1e9).toFixed(1)+" GB" : n > 1e6 ? (n/1e6).toFixed(1)+" MB" : Math.max(1, Math.round(n/1e3))+" KB";
+const fmtT = t => { t = Math.max(0, t || 0); return Math.floor(t / 60) + ":" + (t % 60).toFixed(1).padStart(4, "0"); };
+const MEDIA = /\.(jpe?g|png|webp|bmp|tiff?|gif|heic|heif|avif|jfif|mp4|m4v|mov|mkv|webm|avi|wmv|flv|ts|mts|m2ts|3gp|mpe?g|ogv)$/i;
+const DOCS = /\.(pdf|docx|docm|dotx|pptx|odt|odp|rtf|html?|xml|txt|md|markdown|text|csv|tsv|json|log|srt|vtt|tex|rst|eml)$/i;
+let mode = "media";
+const items = [];        // {id, name, kind, el, state, prog, msg, result, report, file}
+let MODELS = {};
+
+// ---------------------------------------------------------------- tabs, drop zones
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.mode === m));
+  $("#pane-media").classList.toggle("hidden", m !== "media");
+  $("#pane-text").classList.toggle("hidden", m !== "text");
+  modelsNote();
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
+for (const d of [$("#drop"), $("#drop2")]) {
+  d.onclick = () => $("#picker").click();
+  d.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#picker").click(); } };
+}
+$("#picker").onchange = e => { addFiles([...e.target.files]); e.target.value = ""; };
+["dragenter", "dragover"].forEach(t => document.addEventListener(t, e => { e.preventDefault();
+  (mode === "media" ? $("#drop") : $("#drop2")).classList.add("over"); }));
+["dragleave", "drop"].forEach(t => document.addEventListener(t, e => { e.preventDefault();
+  if (t === "drop" || e.target.classList.contains("drop")) { $("#drop").classList.remove("over"); $("#drop2").classList.remove("over"); } }));
+document.addEventListener("drop", e => addFiles([...e.dataTransfer.files]));
+$("#txt").oninput = () => { const n = ($("#txt").value.match(/\S+/g) || []).length;
+  $("#words").textContent = n ? `${n.toLocaleString()} words` + (n < 50 ? " — needs 50+ to be useful" : "") : ""; };
+
+function modelsNote() {
+  const n = $("#models-note");
+  let t = "";
+  if (mode === "media" && MODELS.image === 0) t = "The computer has no AI image models installed yet, so only metadata and forensic maps are checked (no AI score).";
+  if (mode === "text" && MODELS.text === 0) t = "The computer has no AI text models installed yet, so text can't be scored. Ask its owner to download them (Models…).";
+  n.textContent = t; n.classList.toggle("hidden", !t);
+}
+
+function addFiles(files) {
+  for (const f of files) {
+    if (!MEDIA.test(f.name) && !DOCS.test(f.name)) { addItem({ name: f.name, state: "error", msg: "This type of file can't be checked." }); continue; }
+    const it = addItem({ name: f.name, file: f, kind: DOCS.test(f.name) ? "text" : "media", state: "upload", prog: 0, msg: "Uploading …" });
+    upQueue.push(it);
+  }
+  pumpUploads();
+}
+function addItem(o) {
+  if ($(".empty")) $("#list").innerHTML = "";
+  o.el = document.createElement("div"); o.el.className = "card";
+  $("#list").prepend(o.el); items.push(o); render(o); refresh();
+  return o;
+}
+
+// ---------------------------------------------------------------- Wi-Fi: the computer ended sharing, or blocked this device
+let PC = "the computer", GONE = null, misses = 0, goneTimer = 0;
+function gone(kind) {
+  if (GONE === "blocked" && kind !== "blocked") return;
+  GONE = kind;
+  const T = {
+    off: ["⏻", "Wi-Fi sharing has ended", `${PC} stopped sharing, so this page no longer works.`,
+          "If sharing is turned back on, this page reconnects by itself."],
+    lost: ["📶", "Can't reach the computer", "Wi-Fi sharing was turned off, or this device left the Wi-Fi.", "Trying again …"],
+    blocked: ["⛔", "Access ended", "The owner of this computer has ended your access to dl_ai_detector.", ""]}[kind];
+  [$("#gone-ic").textContent, $("#gone-h").textContent, $("#gone-p").textContent, $("#gone-s").textContent] = T;
+  $("#gone").classList.remove("hidden");
+  upQueue.length = 0;
+  clearTimeout(goneTimer);
+  if (kind !== "blocked") goneTimer = setTimeout(retry, 5000);
+}
+async function retry() {
+  try { const r = await fetch("api/info", { cache: "no-store" }); if (r.ok) return location.reload();
+        const j = await r.json().catch(() => ({})); if (j.blocked) return gone("blocked"); if (j.ended) gone("off"); } catch {}
+  goneTimer = setTimeout(retry, 5000);
+}
+function seeGone(j) { if (j && j.blocked) gone("blocked"); else if (j && j.ended) gone("off"); }
+
+// ---------------------------------------------------------------- uploads (one at a time) and jobs
+const upQueue = [];
+let uploading = false;
+function upload(it) {
+  return new Promise((res, rej) => {
+    if (GONE) return rej(new Error($("#gone-h").textContent));
+    const x = new XMLHttpRequest();
+    x.open("POST", "api/upload?name=" + encodeURIComponent(it.name));
+    x.upload.onprogress = e => { if (e.lengthComputable) { it.prog = e.loaded / e.total; it.msg = `Uploading ${Math.round(it.prog * 100)}% of ${size(e.total)}`; render(it); } };
+    x.onload = () => {
+      let j = null; try { j = JSON.parse(x.responseText); } catch {}
+      if (x.status === 200 && j) return res(j);
+      seeGone(j); rej(new Error((j && j.error) || "upload failed"));
+    };
+    x.onerror = () => { if (++misses >= 2) gone("lost"); rej(new Error("The upload failed (is the computer still sharing?)")); };
+    x.send(it.file);
+  });
+}
+async function pumpUploads() {
+  if (uploading) return;
+  uploading = true;
+  while (upQueue.length) {
+    const it = upQueue.shift();
+    try { const j = await upload(it); it.id = j.id; it.state = "wait"; it.prog = 0; it.msg = "Waiting …"; it.file = null; }
+    catch (e) { it.state = "error"; it.msg = e.message; }
+    render(it); refresh(); poll();
+  }
+  uploading = false;
+}
+async function api(path, body) {
+  if (GONE) throw new Error($("#gone-h").textContent);
+  let resp;
+  try { resp = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+  catch (e) { if (++misses >= 2) gone("lost"); throw e; }
+  misses = 0;
+  const j = await resp.json().catch(() => null);
+  seeGone(j);
+  if (!resp.ok) throw new Error((j && j.error) || resp.statusText);
+  return j;
+}
+$("#check-txt").onclick = async () => {
+  const text = $("#txt").value.trim();
+  if (!text) { $("#txt").focus(); return; }
+  const it = addItem({ name: "Pasted text", kind: "text", state: "upload", prog: 0, msg: "Sending …" });
+  try { const j = await api("api/text", { text }); it.id = j.id; it.state = "wait"; it.msg = "Waiting …"; }
+  catch (e) { it.state = "error"; it.msg = e.message; }
+  render(it); refresh(); poll();
+};
+
+let polling = false;
+async function poll() {
+  if (polling || GONE) return;
+  const open = items.filter(i => i.id && ["wait", "run"].includes(i.state));
+  if (!open.length) return;
+  polling = true;
+  try {
+    const r = await fetch("api/status?ids=" + open.map(i => i.id).join(","), { cache: "no-store" });
+    const j = await r.json().catch(() => null);
+    misses = 0;
+    if (!r.ok) seeGone(j);
+    else for (const s of j) {
+      const it = items.find(i => i.id === s.id);
+      if (!it) continue;
+      if (s.state === "gone") { it.state = "error"; it.msg = "This item was removed on the computer."; }
+      else { it.state = s.state; it.prog = s.prog; it.msg = s.msg; if (s.result) it.result = s.result; it.report = s.report; }
+      render(it);
+    }
+  } catch { if (++misses >= 2) gone("lost"); }
+  polling = false;
+  refresh();
+  if (items.some(i => i.id && ["wait", "run"].includes(i.state))) setTimeout(poll, 1000);
+}
+
+// ---------------------------------------------------------------- rendering
+function bar(name, s, title) {
+  return `<div class="score" ${title ? `title="${esc(title)}"` : ""}><span class="n">${esc(name)}</span>
+    <span class="track"><i class="bg-${lvl(s)}" style="width:${Math.round((s || 0) * 100)}%"></i></span><span class="p">${pct(s)}</span></div>`;
+}
+function badgeFor(it) {
+  if (it.state === "done") { const v = it.result.verdict; return `<span class="badge l-${v.level}">${esc(shortLabel(v.label))}</span>`; }
+  if (it.state === "error") return `<span class="badge l-ai">Failed</span>`;
+  return `<span class="badge l-wait">${it.state === "run" ? "Checking " + Math.round((it.prog || 0) * 100) + "%" : it.state === "upload" ? "Uploading" : "Waiting"}</span>`;
+}
+function shortLabel(l) { return l.split(" — ")[0].replace(" (weak AI signal)", ""); }
+
+function render(it) {
+  const running = ["upload", "wait", "run"].includes(it.state);
+  let info = esc(it.msg || "");
+  if (it.state === "done") info = it.result.kind === "text"
+    ? `${(it.result.style.words || 0).toLocaleString()} words` + (it.result.pages ? ` · ${it.result.pages} pages` : "") + ` · checked in ${it.result.elapsed} s`
+    : `${it.result.kind === "video" ? "Video" : "Image"} · checked in ${it.result.elapsed} s`;
+  it.el.innerHTML = `
+    <div class="head"><div style="min-width:0"><div class="name" title="${esc(it.name)}">${esc(it.name)}</div>
+      <div class="info">${info}</div>${running ? `<div class="prog"><i style="width:${Math.round((it.prog || 0) * 100)}%"></i></div>` : ""}</div>
+      ${badgeFor(it)}</div>
+    ${it.state === "done" ? `<div class="body">${it.result.kind === "text" ? textBody(it) : mediaBody(it)}
+      <div class="acts"><button class="btn primary" data-act="copy">Copy result</button>
+      ${it.report ? `<a class="btn" href="api/report/${it.id}">Download report (PDF)</a>` : ""}
+      <button class="btn" data-act="remove">Remove</button></div></div>` : ""}
+    ${it.state === "error" ? `<div class="body err">${esc(it.msg)}</div>` : ""}`;
+  it.el.querySelectorAll("[data-act=copy]").forEach(b => b.onclick = () => copyResult(it, b));
+  it.el.querySelectorAll("[data-act=remove]").forEach(b => b.onclick = () => removeItem(it));
+  it.el.querySelectorAll(".grid img").forEach(im => im.onclick = () => { $("#zoom img").src = im.src; $("#zoom").classList.remove("hidden"); });
+}
+$("#zoom").onclick = () => $("#zoom").classList.add("hidden");
+
+function verdictBlock(v, sub) {
+  return `<div class="verdict v-${v.level}">${esc(v.label)}</div>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}
+    <ul class="find">${(v.lines || []).map(l => `<li>${esc(l)}</li>`).join("")}</ul>`;
+}
+
+function mediaBody(it) {
+  const r = it.result, v = r.verdict, img = n => `api/img/${it.id}/${n}.jpg`;
+  const sub = r.metadata.proof.length ? "Confirmed by the file's own metadata" : v.overall != null ? `Overall AI likelihood ${pct(v.overall)}` : "";
+  let h = verdictBlock(v, sub);
+  const m = r.made;
+  if (m && (m.model || m.tool)) {
+    h += `<div class="made"><b>How this was made</b>
+      ${m.model_friendly || m.model ? `<div class="k">AI model</div><div class="v ai">${esc(m.model_friendly || m.model)}</div>${m.model && m.model_friendly ? `<div class="muted" style="font-size:12px">model id: ${esc(m.model)}</div>` : ""}` : ""}
+      ${m.tool ? `<div class="k">Created with</div><div class="v">${esc(m.tool)}</div>` : ""}
+      ${m.source_label ? `<div class="k">Source type</div><div class="v ${m.ai ? "ai" : ""}">${esc(m.source_label)}</div>` : ""}
+      ${m.when ? `<div class="k">Created on</div><div class="v">${esc(m.when.replace("T", " ").replace("Z", " UTC"))}</div>` : ""}
+      ${m.signer ? `<div class="k">Signed by</div><div class="v">${esc(m.signer)}</div>` : ""}
+      <div class="${m.trust.startsWith("signed and") ? "v-ok" : "v-warn"}" style="margin-top:6px">${m.trust.startsWith("signed and") ? "✔" : "⚠"} ${esc(m.trust)}</div></div>`;
+  }
+  h += `<details open><summary>Scores</summary>`;
+  if (r.pixel.score != null) { h += bar("AI pixel score (average)", r.pixel.score); for (const p of r.pixel.per) h += bar("· " + p.name, p.score); }
+  else h += `<div class="muted">No AI image models on the computer — no pixel score.</div>`;
+  h += r.faces.max != null ? bar(`Face deepfake (max of ${r.faces.count})`, r.faces.max)
+       : `<div class="muted">${r.faces.enabled ? "No faces found." : "Face check not installed on the computer."}</div>`;
+  h += `<div class="muted" style="margin-top:6px">Metadata: ${esc(r.metadata.verdict)}</div>`;
+  for (const x of [...r.metadata.proof]) h += `<div class="v-ai">✔ ${esc(x)}</div>`;
+  for (const x of [...r.metadata.hints]) h += `<div class="v-warn">! ${esc(x)}</div>`;
+  if (r.compression) h += `<div class="v-warn" style="margin-top:4px">⚠ ${esc(r.compression)}</div>`;
+  h += `</details>`;
+  if (r.timeline.length) {
+    const W = 600, H = 70, dur = r.duration || r.timeline[r.timeline.length - 1].t || 1, pts = r.timeline.filter(e => e.ai != null || e.face != null);
+    let bars = "";
+    pts.forEach((e, i) => {
+      const t0 = i ? (pts[i - 1].t + e.t) / 2 : 0, t1 = i + 1 < pts.length ? (e.t + pts[i + 1].t) / 2 : dur;
+      const s = Math.max(e.ai ?? 0, e.face != null ? .9 * e.face : 0), bh = 6 + (H - 12) * s;
+      bars += `<rect x="${t0 / dur * W}" y="${H - 2 - bh}" width="${Math.max(1, (t1 - t0) / dur * W - 1)}" height="${bh}" class="bg-${lvl(s)}" style="fill:var(--${{ai:"red",warn:"orange",lean:"orange",ok:"green",none:"muted"}[lvl(s)]})"><title>${fmtT(e.t)} — AI ${pct(e.ai)}${e.face != null ? ", face " + pct(e.face) : ""}</title></rect>`;
+    });
+    for (const t of r.spikes) bars += `<polygon points="${t / dur * W - 4},${H} ${t / dur * W + 4},${H} ${t / dur * W},${H - 8}" style="fill:var(--orange)"><title>Warp spike at ${fmtT(t)}</title></polygon>`;
+    h += `<details open><summary>Video timeline</summary><svg class="tl" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg>
+      <div class="muted" style="font-size:12px">Each bar is a checked frame (tap/hover for its score). Red = likely AI. ▲ = jitter/warp spike.</div></details>`;
+  }
+  if (r.images.length) {
+    h += `<details><summary>Forensic maps${r.forensics_t != null ? ` (frame at ${fmtT(r.forensics_t)})` : ""}</summary><div class="grid">` +
+      r.images.map(x => `<figure><img loading="lazy" src="${img(x.key)}" alt="${esc(x.label)}"><figcaption>${esc(x.label)}</figcaption></figure>`).join("") +
+      (r.flicker_img ? `<figure><img loading="lazy" src="${img("flicker")}" alt=""><figcaption>Largest warp residual</figcaption></figure>` : "") +
+      `</div><div class="muted" style="font-size:12px;margin-top:4px">ELA: pasted or generated patches glow differently. FFT: bright off-centre dots = periodic AI artifacts. Noise: unnaturally smooth areas stand out.</div></details>`;
+  }
+  if (r.faces_img.length) h += `<details><summary>Faces</summary><div class="faces">` +
+    r.faces_img.map(f => `<div><img loading="lazy" src="${img(f.key)}" alt=""><div class="v-${lvl(f.score)}">${pct(f.score)}${f.t != null ? " @ " + fmtT(f.t) : ""}</div></div>`).join("") + `</div></details>`;
+  if (r.file.length) h += `<details><summary>File information</summary><table class="kv">${r.file.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table></details>`;
+  return h;
+}
+
+function textBody(it) {
+  const r = it.result, v = r.verdict;
+  let h = verdictBlock(v, r.score != null ? `AI likelihood ${pct(r.score)} · ${pct(r.ai_share)} of the text in strongly-AI passages` : "");
+  h += `<details open><summary>Models</summary>${r.per.map(p => bar(p.name, p.score)).join("") || '<div class="muted">No text models on the computer.</div>'}</details>`;
+  if (r.chunks.length) {
+    let t = "";
+    r.chunks.forEach((c, i) => {
+      const l = lvl(c.score), tip = `Passage ${i + 1}: AI ${pct(c.score)}` + (c.per.length ? " — " + c.per.map(p => `${p.name} ${pct(p.score)}`).join(" · ") : "");
+      t += `<span class="${["ai", "warn", "lean"].includes(l) ? "h-" + l : ""}" title="${esc(tip)}">${esc(c.text)}</span>` + esc(r.gaps[i] || "");
+    });
+    h += `<details open><summary>Passages</summary><div class="legend" style="margin-top:6px"><span class="h-ai">75%+ likely AI</span><span class="h-warn">50–75% uncertain</span><span class="h-lean">25–50% weak</span></div>
+      <div class="passages">${t}</div><div class="muted" style="font-size:12px">Tap or hover a passage to see each model's score.</div></details>`;
+  }
+  const s = r.style;
+  h += `<details><summary>Writing style (context, not proof)</summary><table class="kv">
+    <tr><td>Words / sentences</td><td>${s.words} / ${s.sentences}</td></tr>
+    <tr><td>Average sentence</td><td>${s.avg_sentence_words ?? "—"} words</td></tr>
+    <tr><td>Sentence-length variation</td><td>${s.sentence_variation ?? "—"}</td></tr>
+    <tr><td>Vocabulary diversity</td><td>${s.vocabulary_diversity ?? "—"}</td></tr>
+    <tr><td>Chatbot phrases per 1,000 words</td><td>${s.ai_phrases_per_1000_words}</td></tr></table></details>`;
+  return h;
+}
+
+// ---------------------------------------------------------------- copy result (works on plain http:// too)
+function resultText(it) {
+  const r = it.result, v = r.verdict, L = [`${it.name}: ${v.label}`];
+  if (r.kind === "text") {
+    if (r.score != null) L.push(`AI likelihood ${pct(r.score)} · ${pct(r.ai_share)} of the text in strongly-AI passages`);
+    for (const p of r.per) L.push(`- ${p.name}: ${pct(p.score)}`);
+  } else {
+    if (r.metadata.proof.length) L.push("Confirmed by the file's metadata");
+    else if (v.overall != null) L.push(`Overall AI likelihood ${pct(v.overall)}`);
+    const m = r.made;
+    if (m && (m.model || m.tool)) L.push(`How it was made: ${m.model_friendly || m.model || m.tool}${m.tool ? " via " + m.tool : ""}${m.signer ? ", signed by " + m.signer : ""} (${m.trust})`);
+    if (r.pixel.score != null) L.push(`AI pixel score ${pct(r.pixel.score)} (` + r.pixel.per.map(p => `${p.name} ${pct(p.score)}`).join(", ") + ")");
+    if (r.faces.max != null) L.push(`Face deepfake score ${pct(r.faces.max)} (${r.faces.count} faces)`);
+    L.push(`Metadata: ${r.metadata.verdict}`);
+    if (r.compression) L.push(r.compression);
+  }
+  for (const l of v.lines || []) L.push("• " + l);
+  L.push(`— checked with dl_ai_detector on ${PC}`);
+  return L.join("\n");
+}
+async function copyText(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch {}
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+  let ok = false; try { ok = document.execCommand("copy"); } catch {}
+  ta.remove();
+  return ok;
+}
+async function copyResult(it, b) {
+  const ok = await copyText(resultText(it));
+  b.textContent = ok ? "Copied ✓" : "Couldn't copy";
+  setTimeout(() => { b.textContent = "Copy result"; }, 1800);
+}
+
+function removeItem(it) {
+  if (it.id) api("api/forget", { ids: [it.id] }).catch(() => {});
+  it.el.remove(); items.splice(items.indexOf(it), 1);
+  if (!items.length) $("#list").innerHTML = '<div class="empty">Nothing checked yet.</div>';
+  refresh();
+}
+$("#clear").onclick = () => {
+  const ids = items.filter(i => i.id && !["wait", "run"].includes(i.state)).map(i => i.id);
+  if (ids.length) api("api/forget", { ids }).catch(() => {});
+  for (const it of [...items]) if (!["upload", "wait", "run"].includes(it.state)) { it.el.remove(); items.splice(items.indexOf(it), 1); }
+  if (!items.length) $("#list").innerHTML = '<div class="empty">Nothing checked yet.</div>';
+  refresh();
+};
+
+function refresh() {
+  const left = items.filter(i => ["upload", "wait", "run"].includes(i.state)).length;
+  const done = items.filter(i => i.state === "done");
+  const ai = done.filter(i => i.result.verdict.level === "ai").length;
+  $("#status").textContent = left ? `${left} still being checked…` : done.length ? `${done.length} checked · ${ai} likely AI` : "";
+}
+
+// ---------------------------------------------------------------- keep-alive; notice quickly when sharing ends
+async function heartbeat() {
+  if (GONE) return;
+  try {
+    const r = await fetch("api/heartbeat", { cache: "no-store" });
+    misses = 0;
+    if (!r.ok) seeGone(await r.json().catch(() => null));
+  } catch { if (++misses >= 2) gone("lost"); }
+}
+fetch("api/info").then(r => r.json().then(j => { if (!r.ok) { seeGone(j); throw new Error(); } return j; }))
+  .then(i => {
+    PC = i.pc || PC; MODELS = i.models || {};
+    $("#foot").textContent = `${i.app} (v${i.version}) · shared from ${PC}`;
+    $(".sub").textContent = `Shared over Wi-Fi from ${PC}. Your files are uploaded to that computer and checked there.`;
+    modelsNote();
+    setInterval(heartbeat, 4000);
+  })
+  .catch(() => { if (!GONE) $("#foot").textContent = "Couldn't reach the computer. Open the address again."; });
+</script>
+</body>
+</html>

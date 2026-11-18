@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "dl_ai_detector"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5"
 RELEASE_ASSET = "dl_ai_detector-windows.zip"
 
 IMAGE_EXT = {"jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff", "gif", "heic", "heif", "avif", "jfif"}

@@ -15,7 +15,12 @@ def main(argv=None):
                                                                  "'recommended' / 'all') and exit")
     ap.add_argument("--check-update", metavar="OUT_JSON", help="ask GitHub for the latest version, write the "
                                                                 "answer as JSON and exit")
+    ap.add_argument("--wifi-selftest", nargs="+", metavar="FILE", help="test Share via Wi-Fi like a phone would "
+                                                                        "(an image, optionally a document) and exit")
     a = ap.parse_args(argv)
+    if a.wifi_selftest:
+        from .wifi_selftest import run
+        return 0 if run(*a.wifi_selftest[:2], say=lambda s: print(s, flush=True)) else 1
     if a.download_models:
         from . import models
         want = a.download_models

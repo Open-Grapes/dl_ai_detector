@@ -63,6 +63,8 @@ def pyinstaller():
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed",
            "--name", APP_NAME, "--icon", ICNS, "--osx-bundle-identifier", BUNDLE_ID,
            "--add-data", f"{ROOT / 'assets' / 'icon.png'}:assets",
+           "--add-data", f"{ROOT / 'dlai' / 'web_page.html'}:dlai",
+           "--collect-submodules", "zeroconf", "--collect-submodules", "qrcode",
            "--collect-all", "tkinterdnd2", "--collect-all", "c2pa",
            "--collect-submodules", "av", "--collect-submodules", "pypdf", "--collect-data", "certifi",
            "--collect-data", "transformers", *meta,
@@ -241,6 +243,12 @@ def smoke_test():
         print("crash.log:\n" + crash.read_text(), flush=True)
     log = (SUP / f"{APP_NAME}.log").read_text() if (SUP / f"{APP_NAME}.log").exists() else ""
     assert "CRASH" not in log, "the app logged a crash:\n" + log[-3000:]
+
+    # Share via Wi-Fi, end to end like a phone: upload, analyse, maps, report, pasted text, blocking, log.
+    p = subprocess.run([str(binary), "--wifi-selftest", str(png), str(txt)], capture_output=True, text=True,
+                       timeout=900)
+    print(p.stdout[-3000:], p.stderr[-1500:], flush=True)
+    assert "WIFI SELF-TEST PASSED" in p.stdout, "Share via Wi-Fi self-test failed"
 
     # Check for updates reaches GitHub from inside the app (certificates, network). The workflow passes the
     # build's own GitHub token, which can read this repo's releases while the repo is private.

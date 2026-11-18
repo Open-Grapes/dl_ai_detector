@@ -99,6 +99,7 @@ def apply(root, dark):
     style.configure("Drop.TLabel", font=(UI, 13 + _S), foreground=p["muted"], anchor="center")
     style.configure("Muted.TLabel", foreground=p["muted"])
     style.configure("Small.TLabel", foreground=p["faint"], font=(UI, 8 + _S))
+    style.configure("Warn.TLabel", foreground=p["tags"]["warn"])
     style.configure("Title.TLabel", font=(UI, 11 + _S, "bold"))
     style.configure("Treeview", rowheight=26)
     style.configure("Time.TLabel", font=(MONO, 9 + _S), foreground=p["muted"])

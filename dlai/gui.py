@@ -1,11 +1,7 @@
 """Tk window: drop zone, verdict card, result tabs, and the Models manager."""
 
-import os
 import queue
-import shutil
-import subprocess
 import sys
-import tempfile
 import threading
 import tkinter as tk
 import traceback
@@ -17,7 +13,7 @@ from PIL import Image, ImageTk
 from . import charts, fileinfo, models, report, textio, theme
 from .player import Player
 from .textui import TextPage
-from .common import (APP_NAME, APP_VERSION, IMAGE_EXT, MODELS_DIR, RELEASE_ASSET, VIDEO_EXT, fmt_size, fmt_t, kind_of,
+from .common import (APP_NAME, APP_VERSION, IMAGE_EXT, MODELS_DIR, VIDEO_EXT, fmt_size, fmt_t, kind_of,
                      load_settings, log, open_path, resource, save_settings)
 
 try:
@@ -58,7 +54,7 @@ class App:
             self.root = tk.Tk()
         if sys.platform == "darwin":       # Finder "Open With" / files dropped on the Dock icon
             self.root.createcommand("::tk::mac::OpenDocument", lambda *f: f and self.route(f[0]))
-        self.root.title(f"{APP_NAME} {APP_VERSION}")
+        self.root.title(f"{APP_NAME} (v{APP_VERSION})")
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         self.root.geometry(f"{min(1320, sw - 40)}x{min(860, sh - 90)}")        # fit small screens
         self.root.minsize(980, 640)
@@ -75,11 +71,17 @@ class App:
         self.R, self.imgs = None, {}
         self._photos = {}
         self.models_dlg = None
+        self.sharing = None          # web.Sharing while "Share via Wi-Fi" is on
+        self.wifi_win = None
+        self.wifi_admin = None
+        self._wifi_hidden = None     # the uploads count the reminder bar was hidden at
         self._build()
+        self.root.protocol("WM_DELETE_WINDOW", self._close)
         self.apply_theme()
         self.root.after(100, self._poll)
         self.root.after(300, self.refresh_model_hint)
         self.root.after(4000, self._quiet_update_check)
+        self.root.after(1500, self.refresh_wifi_note, True)
         if files:
             self.root.after(400, lambda: self.route(files[0]))
         else:
@@ -92,14 +94,26 @@ class App:
         bar.pack(fill="x")
         ttk.Button(bar, text="Open file…", command=self.open_file).pack(side="left")
         ttk.Button(bar, text="Models…", command=self.open_models).pack(side="left", padx=(6, 0))
-        self.update_btn = ttk.Button(bar, text="Check for updates…", command=self.check_updates)
+        self.update_btn = ttk.Button(bar, text="Check for updates", command=self.check_updates)
         self.update_btn.pack(side="left", padx=(6, 0))
         self.update_dlg = None
         self.export_btn = ttk.Button(bar, text="Export report…", command=self.export, state="disabled")
         self.export_btn.pack(side="left", padx=(6, 0))
         ttk.Checkbutton(bar, text="Dark mode", variable=self.dark, command=self.apply_theme).pack(side="right")
+        self.wifi_btn = ttk.Button(bar, text="Share via Wi-Fi", command=self.open_wifi)
+        self.wifi_btn.pack(side="right", padx=(0, 12))
         self.model_hint = ttk.Label(bar, text="", style="Muted.TLabel")
         self.model_hint.pack(side="right", padx=12)
+        self._top = bar
+
+        # reminder while Wi-Fi uploads are stored on this computer
+        wb = self.wifi_note = ttk.Frame(r, padding=(12, 2, 12, 0))
+        self.wifi_note_lbl = ttk.Label(wb, style="Warn.TLabel")
+        self.wifi_note_lbl.pack(side="left")
+        ttk.Button(wb, text="Hide", command=self._hide_wifi_note).pack(side="right")
+        ttk.Button(wb, text="Admin…", command=self.open_wifi_admin).pack(side="right", padx=6)
+        ttk.Button(wb, text="Delete all…", command=lambda: self._wifi_delete_all()).pack(side="right")
+        ttk.Button(wb, text="Open folder", command=self._open_wifi_folder).pack(side="right", padx=6)
 
         self.modes = ttk.Notebook(r)
         self.modes.bind("<<NotebookTabChanged>>", lambda e: self._mode_changed())
@@ -704,266 +718,125 @@ class App:
                                       and not models.is_installed(m["key"])])
 
     def check_updates(self):
-        if self.update_dlg and self.update_dlg.win.winfo_exists():
+        from .update_win import UpdateWindow
+        if self.update_dlg is not None and self.update_dlg.alive():
             self.update_dlg.win.lift()
+            self.update_dlg.win.focus_force()
+            return
+        self.update_dlg = UpdateWindow(self)
+
+    def set_update_badge(self, version):
+        if version:
+            self.update_btn.configure(text=f"Update available: {version}", style="Accent.TButton")
         else:
-            self.update_dlg = UpdateDialog(self)
+            self.update_btn.configure(text="Check for updates", style="TButton")
 
     def _quiet_update_check(self):
-        """Once per start: if GitHub has a newer version, say so on the toolbar button (no pop-up)."""
+        """At most once a day (unless switched off in Check for updates): if GitHub has a newer version, say so on
+        the button (no pop-up)."""
+        import time
         from . import updater
+        if not self.settings.get("auto_update", True):
+            return
+        seen = self.settings.get("latest_seen")
+        if seen and updater.is_newer(seen):
+            self.set_update_badge(seen)
+        if time.time() - self.settings.get("last_update_check", 0) < 20 * 3600:
+            return
 
         def work():
             try:
                 info = updater.latest()
             except Exception:
                 return
-            if updater.is_newer(info["version"]):
-                self.q.put(("call", lambda: self.update_btn.configure(
-                    text=f"⬆ Update to {info['version']}", style="Accent.TButton")))
+            self.settings["last_update_check"] = time.time()
+            self.settings["latest_seen"] = info["version"]
+            self.q.put(("call", lambda: (self._save(), self.set_update_badge(
+                info["version"] if updater.is_newer(info["version"]) else None))))
         threading.Thread(target=work, daemon=True).start()
+
+    # ------------------------------------------------------------------ Share via Wi-Fi
+    def open_wifi(self):
+        from .wifi_win import WifiWindow
+        if self.wifi_win is not None and self.wifi_win.alive():
+            self.wifi_win.win.lift()
+            self.wifi_win.win.focus_force()
+            return
+        self.wifi_win = WifiWindow(self)
+
+    def open_wifi_admin(self):
+        from .wifi_admin import AdminWindow
+        if self.wifi_admin is not None and self.wifi_admin.alive():
+            self.wifi_admin.win.lift()
+            self.wifi_admin.win.focus_force()
+            return
+        self.wifi_admin = AdminWindow(self)
+
+    def stop_sharing(self):
+        s, self.sharing = self.sharing, None
+        if s is not None:
+            threading.Thread(target=s.stop, daemon=True).start()
+        self.set_wifi_badge()
+
+    def set_wifi_badge(self):
+        on = self.sharing is not None
+        self.wifi_btn.configure(text="Wi-Fi sharing: on" if on else "Share via Wi-Fi",
+                                style="Accent.TButton" if on else "TButton")
+
+    def _open_wifi_folder(self):
+        from . import wifi_store
+        wifi_store.WORK.mkdir(parents=True, exist_ok=True)
+        open_path(wifi_store.WORK)
+
+    def _wifi_delete_all(self, parent=None):
+        from .wifi_admin import delete_all
+        delete_all(self, parent or self.root)
+
+    def _hide_wifi_note(self):
+        from . import wifi_store
+        self._wifi_hidden = wifi_store.stats()[0]
+        self.wifi_note.pack_forget()
+
+    def refresh_wifi_note(self, loop=False):
+        """Show the reminder bar while Wi-Fi uploads are stored (hidden until more arrive, if you press Hide)."""
+        from . import wifi_store
+
+        def work():
+            try:
+                n, size = wifi_store.stats()
+            except Exception:
+                n, size = 0, 0
+            self.q.put(("call", lambda: self._wifi_note_show(n, size)))
+        threading.Thread(target=work, daemon=True).start()
+        if loop:
+            self.root.after(10000, self.refresh_wifi_note, True)
+
+    def _wifi_note_show(self, n, size):
+        from .wifi_store import human
+        if self.wifi_win is not None and self.wifi_win.alive():
+            self.wifi_win.stored(n, size)
+        if n and (self._wifi_hidden is None or n > self._wifi_hidden):
+            self._wifi_hidden = None
+            self.wifi_note_lbl.configure(text=f"⚠  {n} Wi-Fi upload{'s' * (n != 1)} ({human(size)}) stored on "
+                                              "this computer. Delete them when you no longer need them.")
+            if not self.wifi_note.winfo_manager():
+                self.wifi_note.pack(fill="x", after=self._top)
+        elif not n:
+            self.wifi_note.pack_forget()
+
+    def _close(self):
+        if self.sharing is not None:
+            busy = self.sharing.busy()
+            if busy and not messagebox.askyesno(
+                    "Share via Wi-Fi", f"{busy} upload{'s' * (busy != 1)} from Wi-Fi users still being checked.\n\n"
+                                       "Close anyway? Their pages will say sharing has ended.", parent=self.root):
+                return
+            s, self.sharing = self.sharing, None
+            s.stop(linger=0)
+        self.root.destroy()
 
     def run(self):
         self.root.mainloop()
-
-
-class UpdateDialog:
-    """One place to update everything: the app itself (from GitHub releases) and the installed models."""
-
-    def __init__(self, app):
-        from . import updater
-        self.u = updater
-        self.app = app
-        self.info = None          # latest app release, or None
-        self.app_err = None
-        self.model_updates = []   # [(key, remote_info)]
-        self.model_err = []
-        self.busy = False
-        self.cancel = threading.Event()
-        w = self.win = tk.Toplevel(app.root)
-        w.title("Check for updates")
-        w.geometry("640x520")
-        w.transient(app.root)
-        w.configure(bg=app.p["bg"])
-        f = ttk.Frame(w, padding=16)
-        f.pack(fill="both", expand=True)
-        ttk.Label(f, text=f"{APP_NAME} {APP_VERSION}  (this version)", style="Title.TLabel").pack(anchor="w")
-        self.app_lbl = tk.Label(f, text="Checking GitHub for a newer version…", font=(theme.UI, 13, "bold"),
-                                anchor="w", justify="left", wraplength=600, bg=app.p["bg"], fg=app.p["muted"])
-        self.app_lbl.pack(fill="x", pady=(10, 2))
-        self.app_sub = ttk.Label(f, text="", style="Muted.TLabel", wraplength=600, justify="left")
-        self.app_sub.pack(fill="x")
-        self.notes = tk.Text(f, height=8, wrap="word", bd=0, highlightthickness=0, padx=10, pady=8,
-                             font=(theme.UI, 10), bg=app.p["field"], fg=app.p["text"])
-        self.notes.pack(fill="both", expand=True, pady=(8, 8))
-        self.notes.configure(state="disabled")
-        ttk.Label(f, text="Models", style="Title.TLabel").pack(anchor="w")
-        self.mod_lbl = ttk.Label(f, text="Checking installed models…", style="Muted.TLabel", wraplength=600,
-                                 justify="left")
-        self.mod_lbl.pack(fill="x", pady=(2, 8))
-        line = ttk.Frame(f)
-        line.pack(fill="x")
-        self.status = ttk.Label(line, text="", style="Muted.TLabel")
-        self.status.pack(side="left")
-        self.pbar = ttk.Progressbar(f, maximum=1000)
-        self.pbar.pack(fill="x", pady=(6, 10))
-        b = ttk.Frame(f)
-        b.pack(fill="x")
-        self.go = ttk.Button(b, text="Update all", style="Accent.TButton", command=self.update_all, state="disabled")
-        self.go.pack(side="left")
-        self.recheck = ttk.Button(b, text="Check again", command=self.check)
-        self.recheck.pack(side="left", padx=6)
-        ttk.Button(b, text="Release page", command=self.open_page).pack(side="left")
-        self.close_btn = ttk.Button(b, text="Close", command=self.close)
-        self.close_btn.pack(side="right")
-        theme.title_bar(w, app.dark.get())
-        w.protocol("WM_DELETE_WINDOW", self.close)
-        self.check()
-
-    def _ui(self, fn):
-        self.app.q.put(("call", lambda: self.win.winfo_exists() and fn()))
-
-    def _set_notes(self, s):
-        self.notes.configure(state="normal")
-        self.notes.delete("1.0", "end")
-        self.notes.insert("1.0", s)
-        self.notes.configure(state="disabled")
-
-    # ---- checking
-    def check(self):
-        if self.busy:
-            return
-        self.busy = True
-        self.go.configure(state="disabled")
-        self.recheck.configure(state="disabled")
-        self.app_lbl.configure(text="Checking GitHub for a newer version…", fg=self.app.p["muted"])
-        self.mod_lbl.configure(text="Checking installed models…")
-        self.status.configure(text="")
-
-        def work():
-            info, err = None, None
-            try:
-                info = self.u.latest()
-            except self.u.UpdateError as e:
-                err = str(e)
-            except Exception as e:
-                log("update check failed\n" + traceback.format_exc())
-                err = f"Update check failed: {e}"
-            self.info, self.app_err = info, err
-            self._ui(self._show_app)
-            ups, errs = [], []
-            for m in models.installed():
-                try:
-                    st, rinfo = models.check_update(m["key"])
-                    if st == "update":
-                        ups.append((m["key"], rinfo))
-                except Exception as e:
-                    errs.append(f"{m['name']}: {e}")
-            self.model_updates, self.model_err = ups, errs
-            self._ui(self._show_models)
-            self._ui(self._checked)
-        threading.Thread(target=work, daemon=True).start()
-
-    def _app_newer(self):
-        return bool(self.info and self.u.is_newer(self.info["version"]))
-
-    def _show_app(self):
-        p = self.app.p
-        if self.app_err:
-            self.app_lbl.configure(text="Couldn't check for a new version", fg=p["tags"]["warn"])
-            self.app_sub.configure(text=self.app_err)
-            self._set_notes("")
-            return
-        i = self.info
-        via = "  ·  checked with this PC's GitHub login (private repo)" if i.get("private") else ""
-        if self._app_newer():
-            self.app_lbl.configure(text=f"Version {i['version']} is available", fg=p["tags"]["update"])
-            ok, why = self.u.can_install()
-            if not i.get("asset"):
-                ok, why = False, f"That release has no {self.u.asset_name()} to download yet."
-            size = f" · {fmt_size(i['asset']['size'] / 1e6)} download" if i.get("asset") else ""
-            self.app_sub.configure(text=(f"Released {i['published']}{size}{via}" if ok else why))
-            self._can_app = ok
-        else:
-            self.app_lbl.configure(text=f"You're on the latest version ({APP_VERSION}) ✓", fg=p["tags"]["ok"])
-            self.app_sub.configure(text=f"Latest on GitHub: {i['version']}" +
-                                        (f", released {i['published']}" if i["published"] else "") + via)
-            self._can_app = False
-        self._set_notes(("What's new in " + i["version"] + ":\n\n" + i["notes"]) if i["notes"] else
-                        "(no release notes)")
-
-    def _show_models(self):
-        n = len(models.installed())
-        if not n:
-            txt = "No models installed yet (use Models… to download them)."
-        elif self.model_updates:
-            names = ", ".join(models.BY_KEY[k]["name"] for k, _ in self.model_updates)
-            txt = f"{len(self.model_updates)} model update(s) available: {names}"
-        else:
-            txt = f"All {n} installed models are up to date ✓"
-        if self.model_err:
-            txt += "\nCouldn't check: " + "; ".join(self.model_err)
-        self.mod_lbl.configure(text=txt, foreground=self.app.p["tags"]["update"] if self.model_updates
-                               else self.app.p["muted"])
-
-    def _checked(self):
-        self.busy = False
-        self.recheck.configure(state="normal")
-        todo = (getattr(self, "_can_app", False)) or bool(self.model_updates)
-        self.go.configure(state="normal" if todo else "disabled")
-        self.status.configure(text="Everything is up to date." if not todo and not self.app_err and not self.model_err
-                              else "")
-        if self.info and not self._app_newer():
-            self.app.update_btn.configure(text="Check for updates…", style="TButton")
-
-    # ---- updating
-    def update_all(self):
-        if self.busy:
-            return
-        if self.app.busy or (self.app.models_dlg and self.app.models_dlg.busy):
-            messagebox.showinfo("Update", "Wait for the current analysis or model download to finish first.",
-                                parent=self.win)
-            return
-        do_app = getattr(self, "_can_app", False)
-        self.busy = True
-        self.cancel.clear()
-        self.go.configure(state="disabled")
-        self.recheck.configure(state="disabled")
-        self.close_btn.configure(text="Cancel")
-
-        def prog(frac, text):
-            self._ui(lambda: (self.pbar.configure(value=frac * 1000), self.status.configure(text=text)))
-
-        def work():
-            err, helper = None, None
-            try:
-                ups = list(self.model_updates)
-                steps = len(ups) + (1 if do_app else 0)
-                for i, (k, rinfo) in enumerate(ups):
-                    name = models.BY_KEY[k]["name"]
-
-                    def cb(done, total, fname, i=i, name=name):
-                        prog((i + done / max(total, 1)) / steps,
-                             f"Updating {name} — {done / 1e6:.0f} / {total / 1e6:.0f} MB")
-                    models.download(k, cb, self.cancel, info=rinfo)
-                    if self.app.models_dlg:
-                        self.app.models_dlg.remote.pop(k, None)
-                self.model_updates = []
-                if do_app:
-                    base = len(ups)
-                    work_dir = tempfile.mkdtemp(prefix="dlai_dl_", dir=self.u._work_root())
-                    pkg = self.u.download(self.info, work_dir, lambda d, t: prog(
-                        (base + d / max(t, 1)) / steps,
-                        f"Downloading {APP_NAME} {self.info['version']} — {d / 1e6:.0f} / {t / 1e6:.0f} MB"),
-                        self.cancel)
-                    prog(0.99, "Unpacking…")
-                    helper, _ = self.u.prepare_install(pkg, os.getpid())
-                    if not sys.platform == "darwin":       # Mac: the helper mounts the .dmg from here
-                        shutil.rmtree(work_dir, ignore_errors=True)
-            except models.Cancelled:
-                err = "Cancelled"
-            except self.u.UpdateError as e:
-                err = str(e)
-            except Exception as e:
-                log("update failed\n" + traceback.format_exc())
-                err = f"Update failed: {e}"
-            self._ui(lambda: self._updated(err, helper))
-        threading.Thread(target=work, daemon=True).start()
-
-    def _updated(self, err, helper):
-        self.busy = False
-        self.close_btn.configure(text="Close")
-        self.recheck.configure(state="normal")
-        if self.app.models_dlg and self.app.models_dlg.win.winfo_exists():
-            self.app.models_dlg.refresh()
-        self.app.refresh_model_hint()
-        self._show_models()
-        if err:
-            self.pbar["value"] = 0
-            self.status.configure(text=err)
-            self.go.configure(state="normal")
-            if err != "Cancelled":
-                messagebox.showerror("Update", err, parent=self.win)
-            return
-        self.pbar["value"] = 1000
-        if not helper:
-            self.status.configure(text="Models updated. Everything is up to date.")
-            return
-        self.u.start_helper(helper)     # waits for this app to close, then swaps the files and restarts it
-        self.status.configure(text=f"{self.info['version']} is ready — it installs when the app closes.")
-        if messagebox.askyesno("Update ready", f"{APP_NAME} {self.info['version']} is downloaded.\n\n"
-                                               "Restart now to finish the update?", parent=self.win):
-            self.app.root.destroy()
-
-    def open_page(self):
-        import webbrowser
-        webbrowser.open((self.info or {}).get("page") or self.u.RELEASES_PAGE)
-
-    def close(self):
-        if self.busy and str(self.close_btn.cget("text")) == "Cancel":
-            self.cancel.set()
-            return
-        self.win.destroy()
 
 
 class ModelsDialog:

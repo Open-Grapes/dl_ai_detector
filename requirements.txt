@@ -12,3 +12,5 @@ c2pa-python>=0.30
 tkinterdnd2>=0.4
 pyinstaller>=6.0
 pypdf
+qrcode>=7.4
+zeroconf>=0.130
